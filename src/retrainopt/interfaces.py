@@ -1,0 +1,59 @@
+"""Abstract interfaces exposed by RetrainOpt."""
+
+from __future__ import annotations
+
+import random
+from abc import ABC, abstractmethod
+from typing import Any, Sequence
+
+
+class TimelineDataset(ABC):
+    """Time-sliced train/eval dataset interface."""
+
+    @property
+    @abstractmethod
+    def num_steps(self) -> int:
+        """Return the number of logical timesteps."""
+
+    @abstractmethod
+    def get_train_block(self, step: int) -> Any:
+        """Return the full train block for ``step``."""
+
+    @abstractmethod
+    def get_eval_block(self, step: int) -> Any:
+        """Return the full eval block for ``step``."""
+
+    @abstractmethod
+    def train_size(self, step: int) -> int:
+        """Return the train-set size for ``step``."""
+
+    def sample_train_block(self, step: int, n_samples: int, *, seed: int) -> Any:
+        """Return a sampled train block for candidate evaluation."""
+        full_block = self.get_train_block(step)
+        block_size = self.train_size(step)
+        actual_n = min(max(0, int(n_samples)), block_size)
+        if actual_n >= block_size:
+            return full_block
+        if actual_n <= 0:
+            return []
+        if isinstance(full_block, Sequence):
+            rng = random.Random(seed)
+            indices = sorted(rng.sample(range(block_size), actual_n))
+            return [full_block[idx] for idx in indices]
+        raise TypeError(
+            "TimelineDataset.sample_train_block requires a Sequence block or "
+            "an override on the concrete adapter."
+        )
+
+
+class ModelAdapter(ABC):
+    """Model fitting/evaluation abstraction."""
+
+    @abstractmethod
+    def fit(self, train_data: Any, *, step: int, n_samples: int, random_seed: int) -> Any:
+        """Fit a candidate model and return a model artifact."""
+
+    @abstractmethod
+    def evaluate(self, model: Any, eval_data: Any, *, step: int) -> float:
+        """Evaluate a model artifact and return a scalar loss."""
+

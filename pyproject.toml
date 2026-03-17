@@ -1,0 +1,58 @@
+[build-system]
+requires = ["setuptools>=77", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "retrainopt"
+version = "0.1.0"
+description = "RetrainOpt - Cost-aware retraining planning"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = []
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+keywords = ["retraining", "model-maintenance", "cost-aware", "time-sliced-datasets"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+[project.optional-dependencies]
+sklearn = [
+    "scikit-learn",
+]
+torch = [
+    "torch",
+    "torchvision",
+]
+botorch = [
+    "botorch>=0.16.1",
+    "gpytorch",
+    "torch",
+    "torchvision",
+]
+dev = [
+    "pytest",
+    "black",
+    "jupyter",
+]
+
+[project.scripts]
+retrainopt = "retrainopt.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["retrainopt*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
