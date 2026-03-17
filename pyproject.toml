@@ -44,6 +44,11 @@ dev = [
     "jupyter",
 ]
 
+[project.urls]
+Homepage = "https://github.com/yangjun42/retrainopt"
+Repository = "https://github.com/yangjun42/retrainopt"
+Issues = "https://github.com/yangjun42/retrainopt/issues"
+
 [project.scripts]
 retrainopt = "retrainopt.cli:main"
 

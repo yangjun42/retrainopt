@@ -9,6 +9,10 @@ License:
 
 - Apache-2.0
 
+Repository:
+
+- [github.com/yangjun42/retrainopt](https://github.com/yangjun42/retrainopt)
+
 ## Requirements
 
 - Python `>=3.10`
@@ -101,7 +105,8 @@ The built-in CLI consumes a binary timeline directory with:
 ## Bayes Backends
 
 - `lightweight`: dependency-free nearest-neighbor surrogate, fast startup
-- `botorch`: optional GP-based surrogate backend implemented inside `retrainopt`
+- `botorch`: GP-based surrogate backend used by the paper-oriented workflow and
+  validated in CI via the `botorch` extra
 
 `bayes` planning returns an estimated search result first and then exactly
 re-evaluates the selected decision sequence before returning `total_cost`.
@@ -121,4 +126,12 @@ Run the standalone test suite with:
 ```shell
 python -m unittest tests.test_retrainopt_planner tests.test_retrainopt_smoke tests.test_retrainopt_example
 python examples/verify_exact_against_bruteforce.py
+python -m unittest tests.test_retrainopt_botorch
 ```
+
+The last command requires `pip install -e .[botorch]`.
+
+## Release
+
+For GitHub and PyPI release steps, see
+[`PUBLISHING.md`](PUBLISHING.md).

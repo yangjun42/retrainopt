@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 import struct
 import sys
 import tempfile
@@ -309,6 +310,7 @@ class RetrainOptPlannerTests(unittest.TestCase):
                 config=PlannerConfig(bayes_backend="not-a-backend"),
             )
 
+    @unittest.skipIf(importlib.util.find_spec("botorch") is not None, "BoTorch extra is installed.")
     def test_botorch_backend_requires_optional_dependency(self):
         timeline = self.build_timeline()
         planner = RetrainingPlanner(

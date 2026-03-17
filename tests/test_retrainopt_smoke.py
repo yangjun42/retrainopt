@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import json
+import re
 import struct
 import subprocess
 import sys
@@ -24,6 +25,11 @@ class RetrainOptSmokeTests(unittest.TestCase):
         self.assertIn("RetrainingPlanner", retrainopt.__all__)
         self.assertEqual(retrainopt.__version__, "0.1.0")
         self.assertTrue(hasattr(retrainopt.adapters, "BinaryTimelineAdapter"))
+
+        pyproject_text = (PROJECT_ROOT / "pyproject.toml").read_text(encoding="utf-8")
+        version_match = re.search(r'^version\s*=\s*"([^"]+)"', pyproject_text, flags=re.MULTILINE)
+        self.assertIsNotNone(version_match)
+        self.assertEqual(retrainopt.__version__, version_match.group(1))
 
     def test_cli_help(self):
         environment = os.environ.copy()
