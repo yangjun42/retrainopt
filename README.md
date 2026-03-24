@@ -151,6 +151,20 @@ python -m retrainopt.paper_repro.cli run \
   --artifact-root ./artifacts/offline-phase1
 ```
 
+Aggregate all normalized summaries under one artifact root:
+
+```shell
+python -m retrainopt.paper_repro.cli aggregate \
+  --artifact-root ./artifacts/offline-phase1
+```
+
+Compare available exact summaries against the latest-paper seed-42 references:
+
+```shell
+python -m retrainopt.paper_repro.cli compare-latest \
+  --artifact-root ./artifacts/offline-phase1
+```
+
 Render a Puhti batch script for one run:
 
 ```shell
@@ -158,6 +172,19 @@ python -m retrainopt.paper_repro.cli render-puhti \
   --run-id phase1_exact_extreme_sudden_M_seed42 \
   --artifact-root /scratch/project_2005865/jun/retrainopt-artifacts \
   --project-root /scratch/project_2005865/jun/retrainopt
+```
+
+Render the full Phase 1 Puhti bundle and print the recommended rsync command:
+
+```shell
+python -m retrainopt.paper_repro.cli render-puhti-bundle \
+  --artifact-root /scratch/project_2005865/jun/retrainopt-artifacts \
+  --project-root /scratch/project_2005865/jun/retrainopt
+
+python -m retrainopt.paper_repro.cli print-rsync \
+  --local-project-root "$PWD" \
+  --local-artifact-root "$PWD/artifacts/offline-phase1" \
+  --puhti-target puhti:/scratch/project_2005865/jun
 ```
 
 Coverage and explicit Phase 2 omissions are documented in
