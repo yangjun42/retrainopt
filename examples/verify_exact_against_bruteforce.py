@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from _bootstrap import ensure_src_on_path
+
+ensure_src_on_path()
+
 from retrainopt import PlannerConfig, RetrainingPlanner
 from retrainopt.adapters import ArrayTimelineAdapter
 from retrainopt.core.costs import compute_step_cost

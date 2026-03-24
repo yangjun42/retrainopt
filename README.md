@@ -131,6 +131,38 @@ python -m unittest tests.test_retrainopt_botorch
 
 The last command requires `pip install -e .[botorch]`.
 
+## Offline Paper Reproduction
+
+Phase 1 adds an internal offline reproduction harness under `retrainopt.paper_repro`.
+It is intentionally separate from the public planner API and is meant for
+latest-paper offline studies only.
+
+List the bundled Phase 1 runs:
+
+```shell
+python -m retrainopt.paper_repro.cli list
+```
+
+Run one manifest entry and write normalized artifacts:
+
+```shell
+python -m retrainopt.paper_repro.cli run \
+  --run-id phase1_exact_extreme_sudden_M_seed42 \
+  --artifact-root ./artifacts/offline-phase1
+```
+
+Render a Puhti batch script for one run:
+
+```shell
+python -m retrainopt.paper_repro.cli render-puhti \
+  --run-id phase1_exact_extreme_sudden_M_seed42 \
+  --artifact-root /scratch/project_2005865/jun/retrainopt-artifacts \
+  --project-root /scratch/project_2005865/jun/retrainopt
+```
+
+Coverage and explicit Phase 2 omissions are documented in
+[`docs/paper_repro_coverage.md`](docs/paper_repro_coverage.md).
+
 ## Release
 
 For GitHub and PyPI release steps, see

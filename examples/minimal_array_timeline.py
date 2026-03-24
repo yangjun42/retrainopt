@@ -1,5 +1,9 @@
 """Minimal RetrainOpt example using in-memory Python data."""
 
+from _bootstrap import ensure_src_on_path
+
+ensure_src_on_path()
+
 from retrainopt import PlannerConfig, RetrainingPlanner
 from retrainopt.adapters import ArrayTimelineAdapter, PrototypeModelAdapter
 
