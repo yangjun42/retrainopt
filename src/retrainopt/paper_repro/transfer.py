@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Dict
 
 from .manifest import PaperManifest
@@ -48,3 +49,26 @@ def render_puhti_bundle(
         submit_lines.append(f"sbatch {run.run_id}.sbatch")
     bundle["submit_all.sh"] = "\n".join(submit_lines) + "\n"
     return bundle
+
+
+def write_puhti_bundle(
+    *,
+    manifest: PaperManifest,
+    output_dir: Path | str,
+    artifact_root: str,
+    project_root: str,
+) -> Dict[str, Path]:
+    bundle = render_puhti_bundle(
+        manifest=manifest,
+        artifact_root=artifact_root,
+        project_root=project_root,
+    )
+    root = Path(output_dir)
+    root.mkdir(parents=True, exist_ok=True)
+
+    paths: Dict[str, Path] = {}
+    for filename, content in bundle.items():
+        path = root / filename
+        path.write_text(content, encoding="utf-8")
+        paths[filename] = path
+    return paths

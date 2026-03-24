@@ -165,6 +165,13 @@ python -m retrainopt.paper_repro.cli compare-latest \
   --artifact-root ./artifacts/offline-phase1
 ```
 
+Generate dependency-light SVG figures from normalized summaries:
+
+```shell
+python -m retrainopt.paper_repro.cli generate-figures \
+  --artifact-root ./artifacts/offline-phase1
+```
+
 Render a Puhti batch script for one run:
 
 ```shell
@@ -180,6 +187,11 @@ Render the full Phase 1 Puhti bundle and print the recommended rsync command:
 python -m retrainopt.paper_repro.cli render-puhti-bundle \
   --artifact-root /scratch/project_2005865/jun/retrainopt-artifacts \
   --project-root /scratch/project_2005865/jun/retrainopt
+
+python -m retrainopt.paper_repro.cli write-puhti-bundle \
+  --artifact-root /scratch/project_2005865/jun/retrainopt-artifacts \
+  --project-root /scratch/project_2005865/jun/retrainopt \
+  --output-dir ./artifacts/offline-phase1/puhti
 
 python -m retrainopt.paper_repro.cli print-rsync \
   --local-project-root "$PWD" \
