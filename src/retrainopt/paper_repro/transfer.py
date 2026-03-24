@@ -6,7 +6,11 @@ from pathlib import Path
 from typing import Dict
 
 from .manifest import PaperManifest
-from .slurm import render_puhti_batch_script
+from .slurm import (
+    render_puhti_batch_script,
+    render_puhti_postprocess_script,
+    render_puhti_prepare_data_script,
+)
 
 
 def render_rsync_command(
@@ -29,6 +33,11 @@ def render_puhti_bundle(
     project_root: str,
 ) -> Dict[str, str]:
     bundle: Dict[str, str] = {}
+    bundle["prepare_real_data.sbatch"] = render_puhti_prepare_data_script(project_root=project_root)
+    bundle["postprocess_phase1.sbatch"] = render_puhti_postprocess_script(
+        artifact_root=artifact_root,
+        project_root=project_root,
+    )
 
     for run in manifest.runs:
         filename = f"{run.run_id}.sbatch"
@@ -44,9 +53,25 @@ def render_puhti_bundle(
         "set -euo pipefail",
         "",
         f"cd {project_root}",
+        'prepare_id=$(sbatch --parsable prepare_real_data.sbatch)',
+        'run_ids=()',
     ]
     for run in manifest.runs:
-        submit_lines.append(f"sbatch {run.run_id}.sbatch")
+        dataset = manifest.get_dataset(run.dataset)
+        if dataset.source == "binary":
+            submit_lines.append(
+                f'run_ids+=("$(sbatch --parsable --dependency=afterok:${{prepare_id}} {run.run_id}.sbatch)")'
+            )
+        else:
+            submit_lines.append(f'run_ids+=("$(sbatch --parsable {run.run_id}.sbatch)")')
+    submit_lines.extend(
+        [
+            'run_dependency=$(IFS=:; echo "${run_ids[*]}")',
+            'post_id=$(sbatch --parsable --dependency=afterok:${run_dependency} postprocess_phase1.sbatch)',
+            'echo "prepare_real_data: ${prepare_id}"',
+            'echo "postprocess_phase1: ${post_id}"',
+        ]
+    )
     bundle["submit_all.sh"] = "\n".join(submit_lines) + "\n"
     return bundle
 

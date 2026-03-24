@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 
 from .aggregate import write_aggregate_reports
+from .data_prep import prepare_real_datasets
 from .figures import generate_phase1_svg_figures
 from .manifest import default_phase1_manifest
 from .references import latest_paper_report
@@ -25,6 +26,15 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser = subparsers.add_parser("run", help="Execute a single run from the Phase 1 manifest.")
     run_parser.add_argument("--run-id", required=True)
     run_parser.add_argument("--artifact-root", required=True)
+
+    prep_parser = subparsers.add_parser("prepare-real-data", help="Prepare the real datasets used in Phase 1.")
+    prep_parser.add_argument("--dataset", default="all")
+    prep_parser.add_argument("--raw-root", required=True)
+    prep_parser.add_argument("--output-root", required=True)
+    prep_parser.add_argument("--timesteps", type=int, default=50)
+    prep_parser.add_argument("--test-split", type=float, default=0.2)
+    prep_parser.add_argument("--seed", type=int, default=42)
+    prep_parser.add_argument("--download-missing", action="store_true")
 
     list_parser = subparsers.add_parser("list", help="List available Phase 1 run IDs.")
     list_parser.add_argument("--json", action="store_true")
@@ -69,6 +79,19 @@ def main(argv: list[str] | None = None) -> int:
         runner = OfflinePaperRunner(manifest, artifact_root=Path(args.artifact_root))
         summary = runner.run(args.run_id)
         print(json.dumps(summary.to_dict(), indent=2))
+        return 0
+
+    if args.command == "prepare-real-data":
+        results = prepare_real_datasets(
+            datasets=(args.dataset,),
+            raw_root=args.raw_root,
+            output_root=args.output_root,
+            num_steps=args.timesteps,
+            test_split=args.test_split,
+            seed=args.seed,
+            download_missing=args.download_missing,
+        )
+        print(json.dumps(results, indent=2))
         return 0
 
     if args.command == "list":

@@ -143,8 +143,11 @@ class RetrainOptPaperReportingTests(unittest.TestCase):
         )
 
         self.assertIn("submit_all.sh", bundle)
+        self.assertIn("prepare_real_data.sbatch", bundle)
+        self.assertIn("postprocess_phase1.sbatch", bundle)
         self.assertIn("phase1_exact_extreme_sudden_M_seed42.sbatch", bundle)
         self.assertIn("sbatch", bundle["submit_all.sh"])
+        self.assertIn("--dependency=afterok:", bundle["submit_all.sh"])
 
     def test_write_puhti_bundle_writes_files(self):
         manifest = default_phase1_manifest()
@@ -158,6 +161,8 @@ class RetrainOptPaperReportingTests(unittest.TestCase):
 
             self.assertIn("submit_all.sh", paths)
             self.assertTrue(paths["submit_all.sh"].exists())
+            self.assertTrue(paths["prepare_real_data.sbatch"].exists())
+            self.assertTrue(paths["postprocess_phase1.sbatch"].exists())
             self.assertTrue(paths["phase1_exact_extreme_sudden_M_seed42.sbatch"].exists())
 
     def test_cli_aggregate_command_writes_outputs(self):

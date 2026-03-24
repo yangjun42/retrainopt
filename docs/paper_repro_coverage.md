@@ -8,9 +8,10 @@ This document records what the clean `retrainopt` Phase 1 harness covers and wha
 - Offline approximate planning (`bayes`) with lightweight and BoTorch backends
 - Synthetic sudden / gradual / recurring timelines used by the offline paper studies
 - Real binary-timeline datasets consumed through `BinaryTimelineAdapter`
+- Clean real-dataset preparation from raw CSV / LIBSVM files into `train/*.bin` and `test/*.bin`
 - Deterministic disk caching for initial-model and candidate evaluations
 - Normalized run summaries for total cost, training cost, loss cost, candidate counts, cache fingerprint, and schedule output
-- Puhti batch-script rendering for clean offline runs
+- Puhti batch-script rendering for clean offline runs, including data prep and postprocess stages
 - Comparison reporting against latest-paper reference metrics
 
 ## Explicitly Deferred To Phase 2

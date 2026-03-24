@@ -151,6 +151,16 @@ python -m retrainopt.paper_repro.cli run \
   --artifact-root ./artifacts/offline-phase1
 ```
 
+Prepare the real datasets into clean `train/*.bin` and `test/*.bin` timelines:
+
+```shell
+python -m retrainopt.paper_repro.cli prepare-real-data \
+  --dataset all \
+  --raw-root ./data/raw \
+  --output-root ./data \
+  --download-missing
+```
+
 Aggregate all normalized summaries under one artifact root:
 
 ```shell
@@ -198,6 +208,13 @@ python -m retrainopt.paper_repro.cli print-rsync \
   --local-artifact-root "$PWD/artifacts/offline-phase1" \
   --puhti-target puhti:/scratch/project_2005865/jun
 ```
+
+The written Puhti bundle includes:
+
+- `prepare_real_data.sbatch` for raw-data download and binary conversion
+- one `.sbatch` per manifest run
+- `postprocess_phase1.sbatch` for aggregate/compare/figure generation
+- `submit_all.sh` that wires the dependency chain together for real-data preparation and final postprocessing
 
 Coverage and explicit Phase 2 omissions are documented in
 [`docs/paper_repro_coverage.md`](docs/paper_repro_coverage.md).
