@@ -137,6 +137,9 @@ Phase 1 adds an internal offline reproduction harness under `retrainopt.paper_re
 It is intentionally separate from the public planner API and is meant for
 latest-paper offline studies only.
 
+From a source checkout, either install the package with `pip install -e .` or
+prefix the commands below with `PYTHONPATH=src`.
+
 List the bundled Phase 1 runs:
 
 ```shell

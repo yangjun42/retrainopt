@@ -31,7 +31,7 @@ module load pytorch/2.7
 
 cd {project_root}
 
-python -m retrainopt.paper_repro.cli run \\
+PYTHONPATH=src python -m retrainopt.paper_repro.cli run \\
   --run-id {run.run_id} \\
   --artifact-root {artifact_root}
 """
@@ -60,7 +60,7 @@ module load pytorch/2.7
 cd {project_root}
 mkdir -p logs
 
-python -m retrainopt.paper_repro.cli prepare-real-data \\
+PYTHONPATH=src python -m retrainopt.paper_repro.cli prepare-real-data \\
   --dataset all \\
   --raw-root {project_root}/data/raw \\
   --output-root {project_root}/data \\
@@ -93,7 +93,7 @@ module load pytorch/2.7
 
 cd {project_root}
 
-python -m retrainopt.paper_repro.cli aggregate --artifact-root {artifact_root}
-python -m retrainopt.paper_repro.cli compare-latest --artifact-root {artifact_root}
-python -m retrainopt.paper_repro.cli generate-figures --artifact-root {artifact_root}
+PYTHONPATH=src python -m retrainopt.paper_repro.cli aggregate --artifact-root {artifact_root}
+PYTHONPATH=src python -m retrainopt.paper_repro.cli compare-latest --artifact-root {artifact_root}
+PYTHONPATH=src python -m retrainopt.paper_repro.cli generate-figures --artifact-root {artifact_root}
 """
