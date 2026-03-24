@@ -24,7 +24,7 @@ def render_puhti_batch_script(
 #SBATCH --output={artifact_root}/runs/{run.run_id}.out
 #SBATCH --error={artifact_root}/runs/{run.run_id}.err
 
-set -euo pipefail
+set -eo pipefail
 
 source /appl/profile/zz-csc-env.sh
 module load pytorch/2.7
@@ -52,7 +52,7 @@ def render_puhti_prepare_data_script(
 #SBATCH --output={project_root}/logs/prepare_real_data.out
 #SBATCH --error={project_root}/logs/prepare_real_data.err
 
-set -euo pipefail
+set -eo pipefail
 
 source /appl/profile/zz-csc-env.sh
 module load pytorch/2.7
@@ -86,7 +86,7 @@ def render_puhti_postprocess_script(
 #SBATCH --output={artifact_root}/runs/postprocess_phase1.out
 #SBATCH --error={artifact_root}/runs/postprocess_phase1.err
 
-set -euo pipefail
+set -eo pipefail
 
 source /appl/profile/zz-csc-env.sh
 module load pytorch/2.7

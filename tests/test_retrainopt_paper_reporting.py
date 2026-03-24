@@ -148,6 +148,8 @@ class RetrainOptPaperReportingTests(unittest.TestCase):
         self.assertIn("phase1_exact_extreme_sudden_M_seed42.sbatch", bundle)
         self.assertIn("sbatch", bundle["submit_all.sh"])
         self.assertIn("--dependency=afterok:", bundle["submit_all.sh"])
+        self.assertIn("set -eo pipefail", bundle["prepare_real_data.sbatch"])
+        self.assertIn("set -eo pipefail", bundle["postprocess_phase1.sbatch"])
         self.assertIn("PYTHONPATH=src python -m retrainopt.paper_repro.cli prepare-real-data", bundle["prepare_real_data.sbatch"])
         self.assertIn("PYTHONPATH=src python -m retrainopt.paper_repro.cli aggregate", bundle["postprocess_phase1.sbatch"])
 

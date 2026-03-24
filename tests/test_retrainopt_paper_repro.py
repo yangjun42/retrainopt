@@ -281,6 +281,8 @@ class RetrainOptPaperReproTests(unittest.TestCase):
         )
 
         self.assertIn("#SBATCH --job-name=retrainopt-phase1", script)
+        self.assertIn("set -eo pipefail", script)
+        self.assertNotIn("set -euo pipefail", script)
         self.assertIn("module load pytorch/2.7", script)
         self.assertIn("PYTHONPATH=src python -m retrainopt.paper_repro.cli run", script)
         self.assertIn("/scratch/project_2005865/jun/retrainopt-artifacts", script)
