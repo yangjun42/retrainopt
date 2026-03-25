@@ -225,6 +225,50 @@ class RetrainOptPaperReproTests(unittest.TestCase):
             self.assertGreater(first_calls, 0)
             self.assertEqual(first_calls, second_calls)
 
+    def test_synthetic_paper_mlp_run_supports_list_backed_timelines(self):
+        try:
+            import torch  # noqa: F401
+        except ImportError:
+            self.skipTest("Torch is required for the paper_mlp integration test.")
+
+        manifest = PaperManifest(
+            version="test-v1",
+            acceptance_baseline="latest-paper",
+            datasets={
+                "toy_sudden_mlp": DatasetSpec(
+                    name="toy_sudden_mlp",
+                    source="synthetic",
+                    num_features=2,
+                    num_steps=3,
+                    samples_per_step=12,
+                    drift_pattern="sudden",
+                    drift_timestep=1,
+                    pattern_params={"feature_shift": 1.5, "noise_std": 0.2},
+                    model_defaults={"hidden_dims": [8], "epochs": 1, "learning_rate": 0.01, "batch_size": 4},
+                ),
+            },
+            runs=[
+                RunSpec(
+                    run_id="paper_mlp_exact",
+                    study="objective-validity",
+                    dataset="toy_sudden_mlp",
+                    method="exact",
+                    model="paper_mlp",
+                    seed=3,
+                    n_choices=(1.0,),
+                    expected_artifacts=("summary",),
+                ),
+            ],
+        )
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            runner = OfflinePaperRunner(manifest, artifact_root=Path(tmp_dir))
+            summary = runner.run("paper_mlp_exact")
+
+            self.assertEqual(summary.run_id, "paper_mlp_exact")
+            self.assertEqual(summary.method, "exact")
+            self.assertTrue((Path(tmp_dir) / "summaries" / "paper_mlp_exact.json").exists())
+
     def test_comparison_report_flags_drift(self):
         manifest = PaperManifest(
             version="test-v1",

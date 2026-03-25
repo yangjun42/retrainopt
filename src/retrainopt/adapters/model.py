@@ -150,6 +150,7 @@ class TorchModelAdapter(ModelAdapter):
             else torch.optim.Adam(model.parameters(), lr=1e-3)
         )
         criterion = torch.nn.CrossEntropyLoss()
+        train_data = self._coerce_dataset(train_data, torch)
         train_loader = DataLoader(train_data, batch_size=self.batch_size, shuffle=True)
 
         model.train()
@@ -172,6 +173,7 @@ class TorchModelAdapter(ModelAdapter):
         except ImportError as exc:  # pragma: no cover - optional dependency
             raise RuntimeError("TorchModelAdapter requires the `torch` extra.") from exc
 
+        eval_data = self._coerce_dataset(eval_data, torch)
         loader = DataLoader(eval_data, batch_size=self.batch_size, shuffle=False)
         criterion = torch.nn.CrossEntropyLoss()
         model.eval()
@@ -190,3 +192,30 @@ class TorchModelAdapter(ModelAdapter):
         if total_count <= 0:
             return float("inf")
         return total_loss / total_count
+
+    @staticmethod
+    def _coerce_dataset(block: Any, torch: Any) -> Any:
+        if not isinstance(block, Sequence) or not block:
+            return block
+
+        first_item = block[0]
+        if not isinstance(first_item, Sequence) or len(first_item) != 2:
+            return block
+
+        from torch.utils.data import TensorDataset
+
+        feature_tensors = []
+        labels = []
+        for features, label in block:
+            if torch.is_tensor(features):
+                feature_tensor = features.detach().to(dtype=torch.float32)
+            elif isinstance(features, Sequence):
+                feature_tensor = torch.tensor([float(value) for value in features], dtype=torch.float32)
+            else:
+                feature_tensor = torch.tensor([float(features)], dtype=torch.float32)
+            feature_tensors.append(feature_tensor)
+            labels.append(int(label))
+
+        inputs = torch.stack(feature_tensors)
+        targets = torch.tensor(labels, dtype=torch.long)
+        return TensorDataset(inputs, targets)
