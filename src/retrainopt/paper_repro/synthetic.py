@@ -6,6 +6,7 @@ import random
 from typing import List, Sequence, Tuple
 
 from ..adapters import ArrayTimelineAdapter
+from .data_state import build_state_timeline
 from .manifest import DatasetSpec
 
 
@@ -33,7 +34,12 @@ def build_synthetic_timeline(spec: DatasetSpec, seed: int) -> ArrayTimelineAdapt
         eval_blocks.append(samples[:num_test])
         train_blocks.append(samples[num_test:])
 
-    return ArrayTimelineAdapter(train_blocks=train_blocks, eval_blocks=eval_blocks)
+    return build_state_timeline(
+        train_blocks,
+        eval_blocks,
+        strategy=spec.data_state_strategy,
+        sliding_window_k=spec.sliding_window_k,
+    )
 
 
 def _generate_block(spec: DatasetSpec, step: int, seed: int) -> List[Sample]:

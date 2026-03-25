@@ -182,6 +182,79 @@ class RetrainOptPaperReproTests(unittest.TestCase):
             self.assertEqual(summary.timeline_steps, 2)
             self.assertEqual(summary.method, "exact")
 
+    def test_synthetic_timeline_supports_sliding_window_state(self):
+        manifest = PaperManifest(
+            version="test-v1",
+            acceptance_baseline="latest-paper",
+            datasets={
+                "toy_windowed": DatasetSpec(
+                    name="toy_windowed",
+                    source="synthetic",
+                    num_features=1,
+                    num_steps=4,
+                    samples_per_step=5,
+                    test_split_ratio=0.2,
+                    drift_pattern="sudden",
+                    drift_timestep=2,
+                    pattern_params={"feature_shift": 2.0, "noise_std": 0.5},
+                    data_state_strategy="sliding_window",
+                    sliding_window_k=2,
+                ),
+            },
+            runs=[],
+        )
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            runner = OfflinePaperRunner(manifest, artifact_root=Path(tmp_dir))
+            timeline = runner._build_timeline(manifest.datasets["toy_windowed"], seed=7)
+
+            self.assertEqual([timeline.train_size(step) for step in range(timeline.num_steps)], [4, 8, 8, 8])
+            self.assertEqual([len(timeline.get_eval_block(step)) for step in range(timeline.num_steps)], [1, 2, 2, 2])
+
+    def test_binary_timeline_supports_sliding_window_state(self):
+        manifest = PaperManifest(
+            version="test-v1",
+            acceptance_baseline="latest-paper",
+            datasets={
+                "toy_binary_windowed": DatasetSpec(
+                    name="toy_binary_windowed",
+                    source="binary",
+                    num_features=1,
+                    binary_dir="DATASET_DIR",
+                    data_state_strategy="sliding_window",
+                    sliding_window_k=2,
+                ),
+            },
+            runs=[],
+        )
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            dataset_root = Path(tmp_dir) / "dataset"
+            (dataset_root / "train").mkdir(parents=True)
+            (dataset_root / "test").mkdir(parents=True)
+            (dataset_root / "metadata.json").write_text('{"num_features": 1}', encoding="utf-8")
+            self._write_block(dataset_root / "train" / "0.bin", [((0.0,), 0), ((1.0,), 1)])
+            self._write_block(dataset_root / "train" / "1.bin", [((0.2,), 0), ((0.9,), 1)])
+            self._write_block(dataset_root / "train" / "2.bin", [((0.3,), 0), ((0.7,), 1)])
+            self._write_block(dataset_root / "test" / "0.bin", [((0.1,), 0)])
+            self._write_block(dataset_root / "test" / "1.bin", [((0.8,), 1)])
+            self._write_block(dataset_root / "test" / "2.bin", [((0.6,), 1)])
+
+            manifest.datasets["toy_binary_windowed"] = DatasetSpec(
+                name="toy_binary_windowed",
+                source="binary",
+                num_features=1,
+                binary_dir=str(dataset_root),
+                data_state_strategy="sliding_window",
+                sliding_window_k=2,
+            )
+
+            runner = OfflinePaperRunner(manifest, artifact_root=Path(tmp_dir) / "artifacts")
+            timeline = runner._build_timeline(manifest.datasets["toy_binary_windowed"], seed=11)
+
+            self.assertEqual([timeline.train_size(step) for step in range(timeline.num_steps)], [2, 4, 4])
+            self.assertEqual([len(timeline.get_eval_block(step)) for step in range(timeline.num_steps)], [1, 2, 2])
+
     def test_cache_reuse_avoids_duplicate_training(self):
         manifest = PaperManifest(
             version="test-v1",

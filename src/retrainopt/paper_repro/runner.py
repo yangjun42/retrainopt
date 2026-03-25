@@ -12,6 +12,7 @@ from ..evaluation import EvaluationEngine
 from ..planner import RetrainingPlanner
 from ..types import CandidateEvaluation, DecisionAction
 from .cache import ArtifactLayout, load_candidate_evaluation, save_candidate_evaluation, save_json
+from .data_state import build_state_timeline
 from .manifest import DatasetSpec, PaperManifest, RunSpec
 from .synthetic import build_synthetic_timeline
 
@@ -211,7 +212,13 @@ class OfflinePaperRunner:
         if dataset.source == "binary":
             if not dataset.binary_dir:
                 raise ValueError(f"Binary dataset {dataset.name} is missing binary_dir.")
-            return BinaryTimelineAdapter(dataset.binary_dir, num_features=dataset.num_features)
+            timeline = BinaryTimelineAdapter(dataset.binary_dir, num_features=dataset.num_features)
+            return build_state_timeline(
+                [timeline.get_train_block(step) for step in range(timeline.num_steps)],
+                [timeline.get_eval_block(step) for step in range(timeline.num_steps)],
+                strategy=dataset.data_state_strategy,
+                sliding_window_k=dataset.sliding_window_k,
+            )
         raise ValueError(f"Unsupported dataset source: {dataset.source}")
 
     def _build_model_adapter(self, run: RunSpec, dataset: DatasetSpec):

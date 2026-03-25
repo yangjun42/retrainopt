@@ -30,6 +30,8 @@ class DatasetSpec:
     drift_timestep: int = 0
     pattern_params: Dict[str, Any] = field(default_factory=dict)
     model_defaults: Dict[str, Any] = field(default_factory=dict)
+    data_state_strategy: str = "individual"
+    sliding_window_k: int = 1
 
     def fingerprint(self) -> str:
         return _stable_hash(asdict(self))
@@ -132,6 +134,8 @@ def default_phase1_manifest() -> PaperManifest:
             drift_timestep=25,
             pattern_params={"feature_shift": 3.0, "noise_std": 0.5},
             model_defaults={"hidden_dims": [128, 64], "epochs": 5, "learning_rate": 0.01},
+            data_state_strategy="sliding_window",
+            sliding_window_k=2,
         ),
         "gradual_drift_M": DatasetSpec(
             name="gradual_drift_M",
@@ -143,6 +147,8 @@ def default_phase1_manifest() -> PaperManifest:
             drift_timestep=15,
             pattern_params={"drift_duration": 15, "final_threshold": 1.5},
             model_defaults={"hidden_dims": [128, 64], "epochs": 3, "learning_rate": 0.01},
+            data_state_strategy="sliding_window",
+            sliding_window_k=5,
         ),
         "recurring_drift_M": DatasetSpec(
             name="recurring_drift_M",
@@ -154,6 +160,8 @@ def default_phase1_manifest() -> PaperManifest:
             drift_timestep=10,
             pattern_params={"cycle_length": 10, "amplitude": 3.0},
             model_defaults={"hidden_dims": [128, 64], "epochs": 3, "learning_rate": 0.01},
+            data_state_strategy="sliding_window",
+            sliding_window_k=3,
         ),
         "airlines": DatasetSpec(
             name="airlines",
@@ -161,6 +169,8 @@ def default_phase1_manifest() -> PaperManifest:
             num_features=7,
             binary_dir="./data/airlines",
             model_defaults={"hidden_dims": [128, 64], "epochs": 5, "learning_rate": 0.01},
+            data_state_strategy="sliding_window",
+            sliding_window_k=3,
         ),
         "electricity": DatasetSpec(
             name="electricity",
@@ -168,6 +178,8 @@ def default_phase1_manifest() -> PaperManifest:
             num_features=6,
             binary_dir="./data/electricity",
             model_defaults={"hidden_dims": [128, 64], "epochs": 5, "learning_rate": 0.01},
+            data_state_strategy="sliding_window",
+            sliding_window_k=3,
         ),
         "covertype": DatasetSpec(
             name="covertype",
@@ -175,6 +187,8 @@ def default_phase1_manifest() -> PaperManifest:
             num_features=54,
             binary_dir="./data/covertype",
             model_defaults={"hidden_dims": [256, 128], "epochs": 5, "learning_rate": 0.01},
+            data_state_strategy="sliding_window",
+            sliding_window_k=3,
         ),
     }
 
