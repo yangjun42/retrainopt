@@ -13,14 +13,29 @@ def render_puhti_batch_script(
     project_root: str,
 ) -> str:
     run = manifest.get_run(run_id)
-    return f"""#!/bin/bash
-#SBATCH --job-name=retrainopt-phase1
-#SBATCH --account=project_2005865
-#SBATCH --partition=small
+    if run.model == "paper_mlp":
+        resource_block = """#SBATCH --partition=gpu
+#SBATCH --time=04:00:00
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=10
+#SBATCH --mem-per-cpu=8000
+#SBATCH --gres=gpu:v100:1"""
+        env_block = """
+export OMP_NUM_THREADS=${SLURM_CPUS_PER_TASK:-4}
+export MKL_NUM_THREADS=${SLURM_CPUS_PER_TASK:-4}
+export RETRAINOPT_PAPER_DEVICE=${RETRAINOPT_PAPER_DEVICE:-cuda}
+"""
+    else:
+        resource_block = """#SBATCH --partition=small
 #SBATCH --time=04:00:00
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
-#SBATCH --mem=16G
+#SBATCH --mem=16G"""
+        env_block = ""
+    return f"""#!/bin/bash
+#SBATCH --job-name=retrainopt-phase1
+#SBATCH --account=project_2005865
+{resource_block}
 #SBATCH --output={artifact_root}/runs/{run.run_id}.out
 #SBATCH --error={artifact_root}/runs/{run.run_id}.err
 
@@ -28,6 +43,7 @@ set -eo pipefail
 
 source /appl/profile/zz-csc-env.sh
 module load pytorch/2.7
+{env_block}
 
 cd {project_root}
 

@@ -515,6 +515,8 @@ class RetrainOptPaperReproTests(unittest.TestCase):
         )
 
         self.assertIn("#SBATCH --job-name=retrainopt-phase1", script)
+        self.assertIn("#SBATCH --partition=gpu", script)
+        self.assertIn("#SBATCH --gres=gpu:v100:1", script)
         self.assertIn("set -eo pipefail", script)
         self.assertNotIn("set -euo pipefail", script)
         self.assertIn("module load pytorch/2.7", script)
