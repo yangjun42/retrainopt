@@ -32,6 +32,11 @@ class DatasetSpec:
     model_defaults: Dict[str, Any] = field(default_factory=dict)
     data_state_strategy: str = "individual"
     sliding_window_k: int = 1
+    initial_model_behavior: str = "trained_on_step0"
+    m0_base_loss: float = 0.5
+    m0_degradation_rate: float = 0.05
+    m0_effective_train_time: int = -1
+    candidate_sampling_strategy: str = "uniform_random"
 
     def fingerprint(self) -> str:
         return _stable_hash(asdict(self))
@@ -136,6 +141,9 @@ def default_phase1_manifest() -> PaperManifest:
             model_defaults={"hidden_dims": [128, 64], "epochs": 5, "learning_rate": 0.01},
             data_state_strategy="sliding_window",
             sliding_window_k=2,
+            initial_model_behavior="DEGRADING_PERFORMANCE",
+            m0_degradation_rate=0.1,
+            candidate_sampling_strategy="legacy_random_split",
         ),
         "gradual_drift_M": DatasetSpec(
             name="gradual_drift_M",
@@ -149,6 +157,9 @@ def default_phase1_manifest() -> PaperManifest:
             model_defaults={"hidden_dims": [128, 64], "epochs": 3, "learning_rate": 0.01},
             data_state_strategy="sliding_window",
             sliding_window_k=5,
+            initial_model_behavior="DEGRADING_PERFORMANCE",
+            m0_degradation_rate=0.05,
+            candidate_sampling_strategy="legacy_random_split",
         ),
         "recurring_drift_M": DatasetSpec(
             name="recurring_drift_M",
@@ -162,6 +173,9 @@ def default_phase1_manifest() -> PaperManifest:
             model_defaults={"hidden_dims": [128, 64], "epochs": 3, "learning_rate": 0.01},
             data_state_strategy="sliding_window",
             sliding_window_k=3,
+            initial_model_behavior="DEGRADING_PERFORMANCE",
+            m0_degradation_rate=0.06,
+            candidate_sampling_strategy="legacy_random_split",
         ),
         "airlines": DatasetSpec(
             name="airlines",
@@ -171,6 +185,9 @@ def default_phase1_manifest() -> PaperManifest:
             model_defaults={"hidden_dims": [128, 64], "epochs": 5, "learning_rate": 0.01},
             data_state_strategy="sliding_window",
             sliding_window_k=3,
+            initial_model_behavior="DEGRADING_PERFORMANCE",
+            m0_degradation_rate=0.05,
+            candidate_sampling_strategy="legacy_random_split",
         ),
         "electricity": DatasetSpec(
             name="electricity",
@@ -180,6 +197,9 @@ def default_phase1_manifest() -> PaperManifest:
             model_defaults={"hidden_dims": [128, 64], "epochs": 5, "learning_rate": 0.01},
             data_state_strategy="sliding_window",
             sliding_window_k=3,
+            initial_model_behavior="DEGRADING_PERFORMANCE",
+            m0_degradation_rate=0.05,
+            candidate_sampling_strategy="legacy_random_split",
         ),
         "covertype": DatasetSpec(
             name="covertype",
@@ -189,6 +209,9 @@ def default_phase1_manifest() -> PaperManifest:
             model_defaults={"hidden_dims": [256, 128], "epochs": 5, "learning_rate": 0.01},
             data_state_strategy="sliding_window",
             sliding_window_k=3,
+            initial_model_behavior="DEGRADING_PERFORMANCE",
+            m0_degradation_rate=0.05,
+            candidate_sampling_strategy="legacy_random_split",
         ),
     }
 

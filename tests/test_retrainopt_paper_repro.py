@@ -17,6 +17,7 @@ import sys
 sys.path.insert(0, str(SRC_ROOT))
 
 from retrainopt.interfaces import ModelAdapter
+from retrainopt.paper_repro.legacy import build_initial_future_losses, sample_legacy_subset
 from retrainopt.paper_repro.compare import ComparisonTarget, compare_summaries
 from retrainopt.paper_repro.manifest import DatasetSpec, PaperManifest, RunSpec, default_phase1_manifest
 from retrainopt.paper_repro.runner import OfflinePaperRunner
@@ -87,6 +88,78 @@ class RetrainOptPaperReproTests(unittest.TestCase):
         self.assertIn("scalability", studies)
         self.assertIn("kappa-sensitivity", studies)
         self.assertIn("parameter-sensitivity", studies)
+        self.assertEqual(manifest.datasets["extreme_sudden_M"].initial_model_behavior, "DEGRADING_PERFORMANCE")
+        self.assertEqual(manifest.datasets["extreme_sudden_M"].m0_degradation_rate, 0.1)
+        self.assertEqual(manifest.datasets["gradual_drift_M"].m0_degradation_rate, 0.05)
+        self.assertEqual(manifest.datasets["recurring_drift_M"].m0_degradation_rate, 0.06)
+        self.assertEqual(manifest.datasets["airlines"].m0_degradation_rate, 0.05)
+
+    def test_build_initial_future_losses_supports_degrading_m0(self):
+        losses = build_initial_future_losses(
+            num_steps=4,
+            behavior="DEGRADING_PERFORMANCE",
+            base_loss=0.5,
+            degradation_rate=0.2,
+            effective_train_time=-1,
+        )
+
+        self.assertEqual(losses, {0: 0.7, 1: 0.9, 2: 1.1, 3: 1.3})
+
+    def test_runner_supports_degrading_initial_model_without_step0_training(self):
+        manifest = PaperManifest(
+            version="test-v1",
+            acceptance_baseline="latest-paper",
+            datasets={
+                "toy_degrading_m0": DatasetSpec(
+                    name="toy_degrading_m0",
+                    source="synthetic",
+                    num_features=1,
+                    num_steps=4,
+                    samples_per_step=6,
+                    drift_pattern="sudden",
+                    drift_timestep=2,
+                    initial_model_behavior="DEGRADING_PERFORMANCE",
+                    m0_base_loss=0.5,
+                    m0_degradation_rate=0.2,
+                ),
+            },
+            runs=[
+                RunSpec(
+                    run_id="degrading_m0_only",
+                    study="objective-validity",
+                    dataset="toy_degrading_m0",
+                    method="exact",
+                    model="prototype",
+                    seed=3,
+                    n_choices=(),
+                    min_train_size=999,
+                ),
+            ],
+        )
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            runner = OfflinePaperRunner(manifest, artifact_root=Path(tmp_dir))
+            summary = runner.run("degrading_m0_only")
+
+            self.assertEqual(summary.training_cost, 0.0)
+            self.assertEqual(summary.loss_cost, 4.0)
+            self.assertEqual(summary.total_cost, 4.0)
+
+    def test_legacy_subset_sampling_matches_torch_random_split(self):
+        try:
+            import torch
+            from torch.utils.data import random_split
+        except ImportError:
+            self.skipTest("Torch is required for the legacy subset sampling test.")
+
+        block = [((float(index),), index % 2) for index in range(10)]
+        generator = torch.Generator().manual_seed(29)
+        expected_subset, _ = random_split(block, [4, 6], generator=generator)
+        expected = [block[index] for index in expected_subset.indices]
+
+        sampled = sample_legacy_subset(block, n_samples=4, seed=29)
+
+        self.assertEqual(sampled, expected)
 
     def test_synthetic_run_writes_cache_and_summary(self):
         manifest = PaperManifest(

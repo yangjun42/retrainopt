@@ -128,12 +128,14 @@ class TorchModelAdapter(ModelAdapter):
         epochs: int = 5,
         batch_size: int = 64,
         device: str = "cpu",
+        drop_last_full_batch: bool = False,
     ):
         self.model_factory = model_factory
         self.optimizer_factory = optimizer_factory
         self.epochs = max(1, int(epochs))
         self.batch_size = max(1, int(batch_size))
         self.device = device
+        self.drop_last_full_batch = bool(drop_last_full_batch)
 
     def fit(self, train_data: Any, *, step: int, n_samples: int, random_seed: int) -> Any:
         try:
@@ -151,7 +153,13 @@ class TorchModelAdapter(ModelAdapter):
         )
         criterion = torch.nn.CrossEntropyLoss()
         train_data = self._coerce_dataset(train_data, torch)
-        train_loader = DataLoader(train_data, batch_size=self.batch_size, shuffle=True)
+        drop_last = bool(self.drop_last_full_batch and len(train_data) >= self.batch_size)
+        train_loader = DataLoader(
+            train_data,
+            batch_size=self.batch_size,
+            shuffle=True,
+            drop_last=drop_last,
+        )
 
         model.train()
         for _ in range(self.epochs):

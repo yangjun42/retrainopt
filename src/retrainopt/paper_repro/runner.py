@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 import json
+import os
 from pathlib import Path
 from typing import Any, Dict, Sequence
 
@@ -13,6 +14,7 @@ from ..planner import RetrainingPlanner
 from ..types import CandidateEvaluation, DecisionAction
 from .cache import ArtifactLayout, load_candidate_evaluation, save_candidate_evaluation, save_json
 from .data_state import build_state_timeline
+from .legacy import build_initial_future_losses, sample_legacy_subset
 from .manifest import DatasetSpec, PaperManifest, RunSpec
 from .synthetic import build_synthetic_timeline
 
@@ -125,6 +127,124 @@ class DiskBackedEvaluationEngine(EvaluationEngine):
             return None
 
 
+class PaperEvaluationEngine(DiskBackedEvaluationEngine):
+    """Evaluation engine that recreates legacy paper semantics where needed."""
+
+    def __init__(
+        self,
+        *,
+        dataset_spec: DatasetSpec,
+        timeline,
+        model_adapter,
+        config,
+        layout: ArtifactLayout,
+        cache_key: str,
+    ):
+        super().__init__(
+            timeline=timeline,
+            model_adapter=model_adapter,
+            config=config,
+            layout=layout,
+            cache_key=cache_key,
+        )
+        self.dataset_spec = dataset_spec
+
+    def evaluate_initial_model(self, initial_model: Any | None = None) -> CandidateEvaluation:
+        if initial_model is not None:
+            return super().evaluate_initial_model(initial_model=initial_model)
+
+        normalized_behavior = self.dataset_spec.initial_model_behavior.strip().upper()
+        if normalized_behavior == "TRAINED_ON_STEP0":
+            return super().evaluate_initial_model(initial_model=initial_model)
+
+        if self._initial_cache is not None:
+            return self._initial_cache
+
+        evaluation = CandidateEvaluation(
+            model_id=(-1, 0),
+            dataset_size=self.timeline.train_size(0) if self.timeline.num_steps > 0 else 0,
+            training_seconds=0.0,
+            training_cost=0.0,
+            future_losses=build_initial_future_losses(
+                num_steps=self.timeline.num_steps,
+                behavior=normalized_behavior,
+                base_loss=self.dataset_spec.m0_base_loss,
+                degradation_rate=self.dataset_spec.m0_degradation_rate,
+                effective_train_time=self.dataset_spec.m0_effective_train_time,
+            ),
+            observed=True,
+            metadata={"source": normalized_behavior.lower()},
+        )
+        self._initial_cache = evaluation
+        return evaluation
+
+    def evaluate_candidate(self, step: int, n_samples: int) -> CandidateEvaluation:
+        if step < 0 or step >= self.timeline.num_steps:
+            raise IndexError(f"Candidate timestep out of range: {step}")
+
+        dataset_size = self.timeline.train_size(step)
+        actual_n = min(max(0, int(n_samples)), dataset_size)
+        model_id = (step, actual_n)
+        if model_id in self._candidate_cache:
+            return self._candidate_cache[model_id]
+
+        cache_path = self.layout.candidate_path(self.cache_key, step, actual_n)
+        evaluation = self._load_cached_evaluation(cache_path)
+        if evaluation is not None:
+            self._candidate_cache[evaluation.model_id] = evaluation
+            return evaluation
+
+        train_block = self.timeline.get_train_block(step)
+        candidate_seed = self._candidate_seed(step, actual_n)
+        if self.dataset_spec.candidate_sampling_strategy == "legacy_random_split":
+            sampled_train = sample_legacy_subset(train_block, n_samples=actual_n, seed=candidate_seed)
+        else:
+            sampled_train = self.timeline.sample_train_block(step, actual_n, seed=candidate_seed)
+
+        import time
+
+        start_time = time.perf_counter()
+        model = self.model_adapter.fit(
+            sampled_train,
+            step=step,
+            n_samples=actual_n,
+            random_seed=candidate_seed,
+        )
+        training_seconds = time.perf_counter() - start_time
+        training_cost = self.config.time_cost_weight * training_seconds
+
+        future_losses = {}
+        for eval_step in range(step, self.timeline.num_steps):
+            eval_block = self.timeline.get_eval_block(eval_step)
+            future_losses[eval_step] = float(self.model_adapter.evaluate(model, eval_block, step=eval_step))
+
+        evaluation = CandidateEvaluation(
+            model_id=model_id,
+            dataset_size=dataset_size,
+            training_seconds=training_seconds,
+            training_cost=training_cost,
+            future_losses=future_losses,
+            observed=True,
+            metadata={"requested_n": int(n_samples), "sampling_strategy": self.dataset_spec.candidate_sampling_strategy},
+        )
+        self._candidate_cache[model_id] = evaluation
+        save_candidate_evaluation(cache_path, evaluation)
+        return evaluation
+
+    def _candidate_seed(self, step: int, actual_n: int) -> int:
+        if self.dataset_spec.candidate_sampling_strategy == "legacy_random_split":
+            return int(self.config.random_seed) + int(step) + int(actual_n)
+        return int(self.config.random_seed) + int(step) * 1009 + int(actual_n)
+        try:
+            return load_candidate_evaluation(path)
+        except (json.JSONDecodeError, OSError, TypeError, ValueError, KeyError):
+            try:
+                path.unlink()
+            except FileNotFoundError:
+                pass
+            return None
+
+
 class OfflinePaperRunner:
     """Execute internal offline paper reproduction runs."""
 
@@ -147,7 +267,8 @@ class OfflinePaperRunner:
 
         planner = RetrainingPlanner(timeline, model_adapter, config=run.planner_config())
         cache_key = run.cache_key(dataset)
-        planner.engine = DiskBackedEvaluationEngine(
+        planner.engine = PaperEvaluationEngine(
+            dataset_spec=dataset,
             timeline=timeline,
             model_adapter=model_adapter,
             config=planner.config,
@@ -238,8 +359,23 @@ class OfflinePaperRunner:
                 optimizer_factory=self._build_torch_optimizer_factory(learning_rate),
                 epochs=epochs,
                 batch_size=batch_size,
+                device=self._resolve_torch_device(),
+                drop_last_full_batch=True,
             )
         raise ValueError(f"Unsupported internal paper model preset: {run.model}")
+
+    @staticmethod
+    def _resolve_torch_device() -> str:
+        requested = os.environ.get("RETRAINOPT_PAPER_DEVICE")
+        if requested:
+            return requested
+        try:
+            import torch
+        except ImportError:  # pragma: no cover - optional dependency
+            return "cpu"
+        if torch.cuda.is_available():
+            return "cuda"
+        return "cpu"
 
     @staticmethod
     def _build_sklearn_factory(model_name: str, random_seed: int):
