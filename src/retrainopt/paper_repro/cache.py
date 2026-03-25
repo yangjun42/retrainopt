@@ -4,8 +4,10 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 import json
+import os
 from pathlib import Path
 from typing import Any, Dict
+from uuid import uuid4
 
 from ..types import CandidateEvaluation
 
@@ -58,7 +60,7 @@ def save_candidate_evaluation(path: Path, evaluation: CandidateEvaluation) -> No
         "observed": evaluation.observed,
         "metadata": dict(evaluation.metadata),
     }
-    path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+    _atomic_write_json(path, payload)
 
 
 def load_candidate_evaluation(path: Path) -> CandidateEvaluation:
@@ -76,4 +78,10 @@ def load_candidate_evaluation(path: Path) -> CandidateEvaluation:
 
 def save_json(path: Path, payload: Dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+    _atomic_write_json(path, payload)
+
+
+def _atomic_write_json(path: Path, payload: Dict[str, Any]) -> None:
+    temp_path = path.with_name(f".{path.name}.{os.getpid()}.{uuid4().hex}.tmp")
+    temp_path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+    os.replace(temp_path, path)

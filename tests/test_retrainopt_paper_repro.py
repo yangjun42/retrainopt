@@ -21,6 +21,7 @@ from retrainopt.paper_repro.compare import ComparisonTarget, compare_summaries
 from retrainopt.paper_repro.manifest import DatasetSpec, PaperManifest, RunSpec, default_phase1_manifest
 from retrainopt.paper_repro.runner import OfflinePaperRunner
 from retrainopt.paper_repro.slurm import render_puhti_batch_script
+from retrainopt.paper_repro.synthetic import build_synthetic_timeline
 
 
 class CountingPrototypeAdapter(ModelAdapter):
@@ -224,6 +225,49 @@ class RetrainOptPaperReproTests(unittest.TestCase):
 
             self.assertGreater(first_calls, 0)
             self.assertEqual(first_calls, second_calls)
+
+    def test_runner_recovers_from_corrupt_candidate_cache(self):
+        manifest = PaperManifest(
+            version="test-v1",
+            acceptance_baseline="latest-paper",
+            datasets={
+                "toy_gradual": DatasetSpec(
+                    name="toy_gradual",
+                    source="synthetic",
+                    num_features=1,
+                    num_steps=3,
+                    samples_per_step=8,
+                    drift_pattern="gradual",
+                    drift_timestep=1,
+                    pattern_params={"drift_duration": 1, "final_threshold": 1.0},
+                ),
+            },
+            runs=[
+                RunSpec(
+                    run_id="corrupt_cache_exact",
+                    study="objective-validity",
+                    dataset="toy_gradual",
+                    method="exact",
+                    model="prototype",
+                    seed=5,
+                    n_choices=(1.0,),
+                ),
+            ],
+        )
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            runner = OfflinePaperRunner(manifest, artifact_root=Path(tmp_dir))
+            timeline = build_synthetic_timeline(manifest.datasets["toy_gradual"], seed=5)
+            cache_path = runner.layout.candidate_path("corrupt_cache_exact", 0, timeline.train_size(0))
+            cache_path.parent.mkdir(parents=True, exist_ok=True)
+            cache_path.write_text('{"broken": true}\n{"still": "broken"}\n', encoding="utf-8")
+
+            summary = runner.run("corrupt_cache_exact")
+
+            self.assertEqual(summary.run_id, "corrupt_cache_exact")
+            payload = json.loads(cache_path.read_text(encoding="utf-8"))
+            self.assertIn("model_id", payload)
+            self.assertIn("training_cost", payload)
 
     def test_synthetic_paper_mlp_run_supports_list_backed_timelines(self):
         try:

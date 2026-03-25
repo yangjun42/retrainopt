@@ -89,8 +89,8 @@ class DiskBackedEvaluationEngine(EvaluationEngine):
             return super().evaluate_initial_model(initial_model=initial_model)
 
         cache_path = self.layout.initial_path(self.cache_key)
-        if cache_path.exists():
-            evaluation = load_candidate_evaluation(cache_path)
+        evaluation = self._load_cached_evaluation(cache_path)
+        if evaluation is not None:
             self._initial_cache = evaluation
             return evaluation
 
@@ -101,14 +101,27 @@ class DiskBackedEvaluationEngine(EvaluationEngine):
     def evaluate_candidate(self, step: int, n_samples: int) -> CandidateEvaluation:
         actual_n = min(max(0, int(n_samples)), self.timeline.train_size(step))
         cache_path = self.layout.candidate_path(self.cache_key, step, actual_n)
-        if cache_path.exists():
-            evaluation = load_candidate_evaluation(cache_path)
+        evaluation = self._load_cached_evaluation(cache_path)
+        if evaluation is not None:
             self._candidate_cache[evaluation.model_id] = evaluation
             return evaluation
 
         evaluation = super().evaluate_candidate(step, n_samples)
         save_candidate_evaluation(cache_path, evaluation)
         return evaluation
+
+    @staticmethod
+    def _load_cached_evaluation(path: Path) -> CandidateEvaluation | None:
+        if not path.exists():
+            return None
+        try:
+            return load_candidate_evaluation(path)
+        except (json.JSONDecodeError, OSError, TypeError, ValueError, KeyError):
+            try:
+                path.unlink()
+            except FileNotFoundError:
+                pass
+            return None
 
 
 class OfflinePaperRunner:
