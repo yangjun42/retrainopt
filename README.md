@@ -131,96 +131,19 @@ python -m unittest tests.test_retrainopt_botorch
 
 The last command requires `pip install -e .[botorch]`.
 
-## Offline Paper Reproduction
+## Paper Reproduction
 
-Phase 1 adds an internal offline reproduction harness under `retrainopt.paper_repro`.
-It is intentionally separate from the public planner API and is meant for
-latest-paper offline studies only.
+The published `retrainopt` package stays focused on the reusable planner API,
+adapters, and correctness checks for the core paper algorithms.
 
-From a source checkout, either install the package with `pip install -e .` or
-prefix the commands below with `PYTHONPATH=src`.
+The offline paper reproduction harness now lives in the companion repository
+`retrainopt-paper-repro`. That repo installs or pins `retrainopt`, stages the
+reference datasets, renders Puhti bundles, and regenerates paper-side
+summaries, figures, and comparison reports without shipping the experiment
+harness inside the public package itself.
 
-List the bundled Phase 1 runs:
-
-```shell
-python -m retrainopt.paper_repro.cli list
-```
-
-Run one manifest entry and write normalized artifacts:
-
-```shell
-python -m retrainopt.paper_repro.cli run \
-  --run-id phase1_exact_extreme_sudden_M_seed42 \
-  --artifact-root ./artifacts/offline-phase1
-```
-
-Prepare the real datasets into clean `train/*.bin` and `test/*.bin` timelines:
-
-```shell
-python -m retrainopt.paper_repro.cli prepare-real-data \
-  --dataset all \
-  --raw-root ./data/raw \
-  --output-root ./data \
-  --download-missing
-```
-
-Aggregate all normalized summaries under one artifact root:
-
-```shell
-python -m retrainopt.paper_repro.cli aggregate \
-  --artifact-root ./artifacts/offline-phase1
-```
-
-Compare available exact summaries against the latest-paper seed-42 references:
-
-```shell
-python -m retrainopt.paper_repro.cli compare-latest \
-  --artifact-root ./artifacts/offline-phase1
-```
-
-Generate dependency-light SVG figures from normalized summaries:
-
-```shell
-python -m retrainopt.paper_repro.cli generate-figures \
-  --artifact-root ./artifacts/offline-phase1
-```
-
-Render a Puhti batch script for one run:
-
-```shell
-python -m retrainopt.paper_repro.cli render-puhti \
-  --run-id phase1_exact_extreme_sudden_M_seed42 \
-  --artifact-root /scratch/project_2005865/jun/retrainopt-artifacts \
-  --project-root /scratch/project_2005865/jun/retrainopt
-```
-
-Render the full Phase 1 Puhti bundle and print the recommended rsync command:
-
-```shell
-python -m retrainopt.paper_repro.cli render-puhti-bundle \
-  --artifact-root /scratch/project_2005865/jun/retrainopt-artifacts \
-  --project-root /scratch/project_2005865/jun/retrainopt
-
-python -m retrainopt.paper_repro.cli write-puhti-bundle \
-  --artifact-root /scratch/project_2005865/jun/retrainopt-artifacts \
-  --project-root /scratch/project_2005865/jun/retrainopt \
-  --output-dir ./artifacts/offline-phase1/puhti
-
-python -m retrainopt.paper_repro.cli print-rsync \
-  --local-project-root "$PWD" \
-  --local-artifact-root "$PWD/artifacts/offline-phase1" \
-  --puhti-target puhti:/scratch/project_2005865/jun
-```
-
-The written Puhti bundle includes:
-
-- `prepare_real_data.sbatch` for raw-data download and binary conversion
-- one `.sbatch` per manifest run
-- `postprocess_phase1.sbatch` for aggregate/compare/figure generation
-- `submit_all.sh` that wires the dependency chain together for real-data preparation and final postprocessing
-
-Coverage and explicit Phase 2 omissions are documented in
-[`docs/paper_repro_coverage.md`](docs/paper_repro_coverage.md).
+The mapping from the paper terminology to the public `retrainopt` interfaces is
+documented in [`docs/paper_algorithm_mapping.md`](docs/paper_algorithm_mapping.md).
 
 ## Release
 
