@@ -137,10 +137,11 @@ The published `retrainopt` package stays focused on the reusable planner API,
 adapters, and correctness checks for the core paper algorithms.
 
 The offline paper reproduction harness now lives in the companion repository
-`retrainopt-paper-repro`. That repo installs or pins `retrainopt`, stages the
-reference datasets, renders Puhti bundles, and regenerates paper-side
-summaries, figures, and comparison reports without shipping the experiment
-harness inside the public package itself.
+[`retrainopt-paper-repro`](https://github.com/yangjun42/retrainopt-paper-repro).
+That repo installs or pins `retrainopt`, stages the reference datasets, renders
+Puhti bundles, and regenerates paper-side summaries, figures, and comparison
+reports without shipping the experiment harness inside the public package
+itself.
 
 The mapping from the paper terminology to the public `retrainopt` interfaces is
 documented in [`docs/paper_algorithm_mapping.md`](docs/paper_algorithm_mapping.md).
