@@ -223,6 +223,28 @@ class RetrainOptPlannerTests(unittest.TestCase):
         self.assertAlmostEqual(result.training_cost, expected_training, places=9)
         self.assertAlmostEqual(result.loss_cost, expected_loss, places=9)
 
+    def test_bayes_planner_can_stop_early_via_backend_options(self):
+        timeline = self.build_timeline()
+        config = PlannerConfig(
+            n_choices=(0.5, 1.0),
+            min_train_size=1,
+            time_cost_weight=0.0,
+            loss_cost_weight=1.0,
+            bayes_iterations=10,
+            bayes_initial_samples=2,
+            bayes_candidates_per_iteration=1,
+            bayes_backend_options={
+                "early_stop_phi": 1.0,
+                "early_stop_window": 2,
+                "early_stop_min_iterations": 2,
+            },
+        )
+        planner = RetrainingPlanner(timeline, PrototypeClassifierAdapter(), config=config)
+        result = planner.plan(method="bayes")
+
+        self.assertTrue(result.metadata["bayes_stopped_early"])
+        self.assertEqual(result.metadata["bayes_iterations_completed"], 2)
+
     def test_empty_and_out_of_range_sampling_is_handled(self):
         timeline = ArrayTimelineAdapter(
             train_blocks=[
