@@ -70,9 +70,13 @@ class RetrainingPlanner:
         for model_id in selected:
             self.engine.evaluate_candidate(*model_id)
 
+        bayes_iterations_completed = 0
+        bayes_estimated_total_history: List[float] = []
+        bayes_stopped_early = False
         for _ in range(max(0, self.config.bayes_iterations)):
             observed = list(self.engine.iter_cached_candidates())
             if not observed:
+                bayes_stopped_early = True
                 break
 
             surrogate = self._fit_surrogates(observed)
@@ -101,6 +105,7 @@ class RetrainingPlanner:
                 scored_candidates.append((score, model_id))
 
             if not scored_candidates:
+                bayes_stopped_early = True
                 break
 
             scored_candidates.sort(key=lambda item: item[0])
@@ -111,35 +116,33 @@ class RetrainingPlanner:
             for model_id in next_ids:
                 self.engine.evaluate_candidate(*model_id)
 
+            bayes_iterations_completed += 1
+            iteration_observed = list(self.engine.iter_cached_candidates())
+            iteration_surrogate = self._fit_surrogates(iteration_observed)
+            iteration_state_costs = self._build_estimated_state_costs(
+                initial_eval,
+                all_candidates,
+                iteration_observed,
+                iteration_surrogate,
+            )
+            iteration_total, _, _, _ = solve_exact_schedule(
+                self.timeline.num_steps,
+                iteration_state_costs,
+                loss_cost_weight=self.config.loss_cost_weight,
+            )
+            bayes_estimated_total_history.append(float(iteration_total))
+
         observed = list(self.engine.iter_cached_candidates())
         if not observed:
             raise RuntimeError("Bayes planner did not evaluate any retraining candidates.")
 
         surrogate = self._fit_surrogates(observed)
-        estimated_state_costs = {(-1, 0): initial_eval.to_state_cost()}
-        observed_map = {evaluation.model_id: evaluation for evaluation in observed}
-
-        for step, n_value in all_candidates:
-            dataset_size = self.timeline.train_size(step)
-            if (step, n_value) in observed_map:
-                estimated_state_costs[(step, n_value)] = observed_map[(step, n_value)].to_state_cost()
-                continue
-
-            training_mean, _ = surrogate.predict_training_cost(step, n_value, dataset_size)
-            training_mean = max(0.0, float(training_mean))
-            future_losses = {}
-            for eval_step in range(step, self.timeline.num_steps):
-                loss_mean, _ = surrogate.predict_loss(step, n_value, dataset_size, eval_step)
-                future_losses[eval_step] = max(0.0, float(loss_mean))
-            evaluation = CandidateEvaluation(
-                model_id=(step, n_value),
-                dataset_size=dataset_size,
-                training_seconds=training_mean / max(self.config.time_cost_weight, 1e-12),
-                training_cost=training_mean,
-                future_losses=future_losses,
-                observed=False,
-            )
-            estimated_state_costs[(step, n_value)] = evaluation.to_state_cost()
+        estimated_state_costs = self._build_estimated_state_costs(
+            initial_eval,
+            all_candidates,
+            observed,
+            surrogate,
+        )
 
         estimated_total, decisions, _, _ = solve_exact_schedule(
             self.timeline.num_steps,
@@ -173,6 +176,9 @@ class RetrainingPlanner:
                 "acquisition": self.config.acquisition,
                 "bayes_backend": self.config.bayes_backend,
                 "selected_sequence_evaluated_exactly": True,
+                "bayes_iterations_completed": bayes_iterations_completed,
+                "bayes_stopped_early": bayes_stopped_early,
+                "bayes_estimated_total_history": bayes_estimated_total_history,
             },
         )
 
@@ -225,6 +231,39 @@ class RetrainingPlanner:
             time_feature_fn=self._time_features,
             loss_feature_fn=self._loss_features,
         )
+
+    def _build_estimated_state_costs(
+        self,
+        initial_eval: CandidateEvaluation,
+        all_candidates: Sequence[ModelId],
+        observed: Sequence[CandidateEvaluation],
+        surrogate,
+    ) -> Dict[ModelId, Dict[str, Any]]:
+        estimated_state_costs = {(-1, 0): initial_eval.to_state_cost()}
+        observed_map = {evaluation.model_id: evaluation for evaluation in observed}
+
+        for step, n_value in all_candidates:
+            dataset_size = self.timeline.train_size(step)
+            if (step, n_value) in observed_map:
+                estimated_state_costs[(step, n_value)] = observed_map[(step, n_value)].to_state_cost()
+                continue
+
+            training_mean, _ = surrogate.predict_training_cost(step, n_value, dataset_size)
+            training_mean = max(0.0, float(training_mean))
+            future_losses = {}
+            for eval_step in range(step, self.timeline.num_steps):
+                loss_mean, _ = surrogate.predict_loss(step, n_value, dataset_size, eval_step)
+                future_losses[eval_step] = max(0.0, float(loss_mean))
+            evaluation = CandidateEvaluation(
+                model_id=(step, n_value),
+                dataset_size=dataset_size,
+                training_seconds=training_mean / max(self.config.time_cost_weight, 1e-12),
+                training_cost=training_mean,
+                future_losses=future_losses,
+                observed=False,
+            )
+            estimated_state_costs[(step, n_value)] = evaluation.to_state_cost()
+        return estimated_state_costs
 
     def _predict_immediate_cost(
         self,

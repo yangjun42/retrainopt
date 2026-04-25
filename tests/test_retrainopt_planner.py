@@ -188,6 +188,15 @@ class RetrainOptPlannerTests(unittest.TestCase):
         )
         self.assertEqual(result.metadata["bayes_backend"], "lightweight")
         self.assertTrue(result.metadata["selected_sequence_evaluated_exactly"])
+        self.assertEqual(result.metadata["bayes_iterations_completed"], 2)
+        self.assertFalse(result.metadata["bayes_stopped_early"])
+        self.assertEqual(len(result.metadata["bayes_estimated_total_history"]), 2)
+        self.assertTrue(
+            all(
+                isinstance(value, float)
+                for value in result.metadata["bayes_estimated_total_history"]
+            )
+        )
         serialized = result.to_dict()
         self.assertEqual(serialized["method"], "bayes")
         self.assertEqual(len(serialized["decisions"]), timeline.num_steps)
