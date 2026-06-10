@@ -104,6 +104,13 @@ class RetrainingPlanner:
                 next_ids = self._new_retrain_candidates_from_sequence(acquisition_decisions, observed_ids)
                 if not next_ids:
                     next_ids = self._top_scored_unobserved_candidates(all_candidates, observed, surrogate)
+                else:
+                    next_ids = self._supplement_to_minimum_new_candidates(
+                        next_ids,
+                        all_candidates,
+                        observed,
+                        surrogate,
+                    )
             else:
                 next_ids = self._top_scored_unobserved_candidates(all_candidates, observed, surrogate)
 
@@ -246,13 +253,10 @@ class RetrainingPlanner:
         for ratio in self.config.bayes_anchor_steps:
             clamped = min(1.0, max(0.0, float(ratio)))
             step = int(round(clamped * max(0, self.timeline.num_steps - 1)))
-            step_choices = [candidate for candidate in all_candidates if candidate[0] == step]
-            if not step_choices:
-                continue
-            model_id = max(step_choices, key=lambda item: item[1])
-            if model_id not in seen:
-                seed_models.append(model_id)
-                seen.add(model_id)
+            for model_id in [candidate for candidate in all_candidates if candidate[0] == step]:
+                if model_id not in seen:
+                    seed_models.append(model_id)
+                    seen.add(model_id)
 
         remaining = [candidate for candidate in all_candidates if candidate not in seen]
         rng = random.Random(self.config.random_seed)
@@ -376,6 +380,8 @@ class RetrainingPlanner:
         all_candidates: Sequence[ModelId],
         observed: Sequence[CandidateEvaluation],
         surrogate,
+        *,
+        limit: int | None = None,
     ) -> List[ModelId]:
         observed_ids = {evaluation.model_id for evaluation in observed}
         best_observed_cost = self._best_observed_immediate_cost(observed)
@@ -403,10 +409,38 @@ class RetrainingPlanner:
             scored_candidates.append((score, model_id))
 
         scored_candidates.sort(key=lambda item: item[0])
+        target = max(1, int(limit if limit is not None else self.config.bayes_candidates_per_iteration))
         return [
             model_id
-            for _, model_id in scored_candidates[: max(1, self.config.bayes_candidates_per_iteration)]
+            for _, model_id in scored_candidates[:target]
         ]
+
+    def _supplement_to_minimum_new_candidates(
+        self,
+        selected_ids: Sequence[ModelId],
+        all_candidates: Sequence[ModelId],
+        observed: Sequence[CandidateEvaluation],
+        surrogate,
+    ) -> List[ModelId]:
+        target = max(1, int(self.config.bayes_candidates_per_iteration))
+        next_ids = list(selected_ids)
+        if len(next_ids) >= target:
+            return next_ids
+
+        seen = set(next_ids)
+        for model_id in self._top_scored_unobserved_candidates(
+            all_candidates,
+            observed,
+            surrogate,
+            limit=len(all_candidates),
+        ):
+            if model_id in seen:
+                continue
+            next_ids.append(model_id)
+            seen.add(model_id)
+            if len(next_ids) >= target:
+                break
+        return next_ids
 
     def _best_observed_component_costs(
         self,

@@ -241,6 +241,7 @@ class RetrainOptPlannerTests(unittest.TestCase):
             bayes_iterations=2,
             bayes_initial_samples=2,
             bayes_candidates_per_iteration=1,
+            bayes_anchor_steps=(0.0,),
             acquisition="expected",
             record_bayes_true_history=True,
         )
@@ -384,6 +385,63 @@ class RetrainOptPlannerTests(unittest.TestCase):
             [[(1, 1), (3, 1)]],
         )
         self.assertEqual(result.metadata["bayes_retrain_steps_by_iteration"], [[1, 3]])
+
+    def test_bayes_sequence_acquisition_supplements_to_minimum_new_candidates(self):
+        state_costs = {
+            (-1, 0): {
+                "training_cost": 0.0,
+                "future_losses": {0: 100.0, 1: 100.0, 2: 100.0},
+            },
+            (0, 1): {
+                "training_cost": 500.0,
+                "future_losses": {0: 100.0, 1: 100.0, 2: 100.0},
+            },
+            (1, 1): {
+                "training_cost": 1.0,
+                "future_losses": {1: 1.0, 2: 1.0},
+            },
+            (2, 1): {
+                "training_cost": 2.0,
+                "future_losses": {2: 2.0},
+            },
+        }
+        planner = RetrainingPlanner(
+            _TinyTimeline(num_steps=3),
+            _NoopAdapter(),
+            config=PlannerConfig(
+                n_choices=(1,),
+                loss_cost_weight=1.0,
+                bayes_iterations=1,
+                bayes_initial_samples=1,
+                bayes_anchor_steps=(0.0,),
+                bayes_candidates_per_iteration=2,
+                acquisition="expected",
+            ),
+        )
+        planner.engine = _StaticEvaluationEngine(state_costs)
+        planner._fit_surrogates = lambda evaluations: _StaticSurrogate(state_costs)
+
+        result = planner.plan(method="bayes")
+
+        self.assertEqual(
+            result.metadata["bayes_new_candidates_by_iteration"],
+            [[(1, 1), (2, 1)]],
+        )
+
+    def test_bayes_seed_candidates_cover_all_n_choices_at_anchor_steps(self):
+        planner = RetrainingPlanner(
+            _TinyTimeline(num_steps=5),
+            _NoopAdapter(),
+            config=PlannerConfig(
+                n_choices=(1, 2),
+                bayes_initial_samples=1,
+                bayes_anchor_steps=(0.0, 0.5, 1.0),
+            ),
+        )
+
+        selected = set(planner._seed_bayes_candidates(planner._all_candidate_ids()))
+
+        self.assertTrue({(0, 1), (0, 2), (2, 1), (2, 2), (4, 1), (4, 2)}.issubset(selected))
 
     def test_empty_and_out_of_range_sampling_is_handled(self):
         timeline = ArrayTimelineAdapter(
