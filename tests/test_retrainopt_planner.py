@@ -173,6 +173,7 @@ class RetrainOptPlannerTests(unittest.TestCase):
             bayes_initial_samples=2,
             bayes_candidates_per_iteration=1,
             acquisition="expected",
+            record_bayes_true_history=True,
         )
         planner = RetrainingPlanner(timeline, PrototypeClassifierAdapter(), config=config)
         result = planner.plan(method="bayes")
@@ -196,6 +197,17 @@ class RetrainOptPlannerTests(unittest.TestCase):
                 isinstance(value, float)
                 for value in result.metadata["bayes_estimated_total_history"]
             )
+        )
+        self.assertEqual(len(result.metadata["bayes_true_total_history"]), 2)
+        self.assertTrue(
+            all(
+                isinstance(value, float)
+                for value in result.metadata["bayes_true_total_history"]
+            )
+        )
+        self.assertGreaterEqual(
+            min(result.metadata["bayes_true_total_history"]),
+            0.0,
         )
         serialized = result.to_dict()
         self.assertEqual(serialized["method"], "bayes")

@@ -72,6 +72,7 @@ class RetrainingPlanner:
 
         bayes_iterations_completed = 0
         bayes_estimated_total_history: List[float] = []
+        bayes_estimated_decisions_history: List[List[Decision]] = []
         bayes_stopped_early = False
         for _ in range(max(0, self.config.bayes_iterations)):
             observed = list(self.engine.iter_cached_candidates())
@@ -125,12 +126,13 @@ class RetrainingPlanner:
                 iteration_observed,
                 iteration_surrogate,
             )
-            iteration_total, _, _, _ = solve_exact_schedule(
+            iteration_total, iteration_decisions, _, _ = solve_exact_schedule(
                 self.timeline.num_steps,
                 iteration_state_costs,
                 loss_cost_weight=self.config.loss_cost_weight,
             )
             bayes_estimated_total_history.append(float(iteration_total))
+            bayes_estimated_decisions_history.append(list(iteration_decisions))
 
         observed = list(self.engine.iter_cached_candidates())
         if not observed:
@@ -161,6 +163,14 @@ class RetrainingPlanner:
             loss_cost_weight=self.config.loss_cost_weight,
         )
         total_evaluated_candidates = len(list(self.engine.iter_cached_candidates()))
+        bayes_true_total_history = (
+            self._exact_total_history_for_sequences(
+                initial_eval,
+                bayes_estimated_decisions_history,
+            )
+            if self.config.record_bayes_true_history
+            else []
+        )
         return PlanResult(
             method="bayes",
             decisions=decisions,
@@ -179,6 +189,8 @@ class RetrainingPlanner:
                 "bayes_iterations_completed": bayes_iterations_completed,
                 "bayes_stopped_early": bayes_stopped_early,
                 "bayes_estimated_total_history": bayes_estimated_total_history,
+                "bayes_true_total_history": bayes_true_total_history,
+                "record_bayes_true_history": bool(self.config.record_bayes_true_history),
             },
         )
 
@@ -187,6 +199,27 @@ class RetrainingPlanner:
         for step, n_value in self._all_candidate_ids():
             state_costs[(step, n_value)] = self.engine.evaluate_candidate(step, n_value).to_state_cost()
         return state_costs
+
+    def _exact_total_history_for_sequences(
+        self,
+        initial_eval: CandidateEvaluation,
+        decision_history: Sequence[Sequence[Decision]],
+    ) -> List[float]:
+        true_totals: List[float] = []
+        for decisions in decision_history:
+            realized_state_costs = {(-1, 0): initial_eval.to_state_cost()}
+            for step, decision in enumerate(decisions):
+                if decision.action != DecisionAction.RETRAIN:
+                    continue
+                model_id = (step, int(decision.n_samples or 0))
+                realized_state_costs[model_id] = self.engine.evaluate_candidate(*model_id).to_state_cost()
+            total_cost, _, _ = evaluate_decision_sequence(
+                decisions,
+                realized_state_costs,
+                loss_cost_weight=self.config.loss_cost_weight,
+            )
+            true_totals.append(float(total_cost))
+        return true_totals
 
     def _all_candidate_ids(self) -> List[ModelId]:
         candidates: List[ModelId] = []
