@@ -212,7 +212,7 @@ class RetrainingPlanner:
                 if decision.action != DecisionAction.RETRAIN:
                     continue
                 model_id = (step, int(decision.n_samples or 0))
-                realized_state_costs[model_id] = self.engine.evaluate_candidate(*model_id).to_state_cost()
+                realized_state_costs[model_id] = self.engine.evaluate_candidate_uncached(*model_id).to_state_cost()
             total_cost, _, _ = evaluate_decision_sequence(
                 decisions,
                 realized_state_costs,

@@ -17,7 +17,7 @@ from retrainopt.adapters import ArrayTimelineAdapter, PrototypeModelAdapter
 from retrainopt.core.costs import compute_step_cost
 from retrainopt.core.dp import evaluate_decision_sequence, solve_exact_schedule
 from retrainopt.interfaces import ModelAdapter
-from retrainopt.types import DecisionAction
+from retrainopt.types import Decision, DecisionAction
 
 
 class PrototypeClassifierAdapter(ModelAdapter):
@@ -243,6 +243,30 @@ class RetrainOptPlannerTests(unittest.TestCase):
         self.assertAlmostEqual(result.total_cost, expected_total, places=9)
         self.assertAlmostEqual(result.training_cost, expected_training, places=9)
         self.assertAlmostEqual(result.loss_cost, expected_loss, places=9)
+
+    def test_bayes_true_history_does_not_pollute_observed_candidate_cache(self):
+        timeline = self.build_timeline()
+        config = PlannerConfig(
+            n_choices=(0.5, 1.0),
+            min_train_size=1,
+            time_cost_weight=0.0,
+            loss_cost_weight=1.0,
+        )
+        planner = RetrainingPlanner(timeline, PrototypeClassifierAdapter(), config=config)
+        initial_eval = planner.engine.evaluate_initial_model()
+        decision_history = [
+            [
+                Decision(DecisionAction.KEEP),
+                Decision(DecisionAction.RETRAIN, n_samples=2, trained_at=1),
+                Decision(DecisionAction.KEEP),
+            ]
+        ]
+
+        self.assertEqual(len(list(planner.engine.iter_cached_candidates())), 0)
+        true_totals = planner._exact_total_history_for_sequences(initial_eval, decision_history)
+
+        self.assertEqual(len(true_totals), 1)
+        self.assertEqual(len(list(planner.engine.iter_cached_candidates())), 0)
 
     def test_empty_and_out_of_range_sampling_is_handled(self):
         timeline = ArrayTimelineAdapter(
