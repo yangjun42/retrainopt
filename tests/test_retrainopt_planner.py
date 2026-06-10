@@ -17,7 +17,7 @@ from retrainopt.adapters import ArrayTimelineAdapter, PrototypeModelAdapter
 from retrainopt.core.costs import compute_step_cost
 from retrainopt.core.dp import evaluate_decision_sequence, solve_exact_schedule
 from retrainopt.interfaces import ModelAdapter
-from retrainopt.types import Decision, DecisionAction
+from retrainopt.types import CandidateEvaluation, Decision, DecisionAction
 
 
 class PrototypeClassifierAdapter(ModelAdapter):
@@ -60,6 +60,73 @@ class PrototypeClassifierAdapter(ModelAdapter):
             if int(predicted) != int(label):
                 mistakes += 1
         return mistakes / len(eval_data)
+
+
+class _TinyTimeline:
+    def __init__(self, num_steps=4):
+        self.num_steps = num_steps
+
+    def train_size(self, step):
+        return 10
+
+    def sample_train_block(self, step, n_samples, seed):
+        return [((float(step),), 0)] * int(n_samples)
+
+    def get_eval_block(self, step):
+        return [((float(step),), 0)]
+
+
+class _NoopAdapter(ModelAdapter):
+    def fit(self, train_data, *, step, n_samples, random_seed):
+        return {"step": step, "n_samples": n_samples}
+
+    def evaluate(self, model, eval_data, *, step):
+        return 0.0
+
+
+class _StaticSurrogate:
+    def __init__(self, state_costs):
+        self.state_costs = state_costs
+
+    def predict_training_cost(self, step, n_value, dataset_size):
+        return float(self.state_costs[(step, n_value)]["training_cost"]), 0.0
+
+    def predict_loss(self, step, n_value, dataset_size, eval_step):
+        return float(self.state_costs[(step, n_value)]["future_losses"].get(eval_step, 999.0)), 0.0
+
+
+class _StaticEvaluationEngine:
+    def __init__(self, state_costs):
+        self.state_costs = state_costs
+        self._candidate_cache = {}
+        self.evaluate_candidate_calls = []
+
+    def evaluate_initial_model(self, initial_model=None):
+        return self._evaluation((-1, 0), observed=True)
+
+    def evaluate_candidate(self, step, n_samples):
+        model_id = (int(step), int(n_samples))
+        if model_id not in self._candidate_cache:
+            self.evaluate_candidate_calls.append(model_id)
+            self._candidate_cache[model_id] = self._evaluation(model_id, observed=True)
+        return self._candidate_cache[model_id]
+
+    def evaluate_candidate_uncached(self, step, n_samples):
+        return self._evaluation((int(step), int(n_samples)), observed=True)
+
+    def iter_cached_candidates(self):
+        return self._candidate_cache.values()
+
+    def _evaluation(self, model_id, *, observed):
+        info = self.state_costs[model_id]
+        return CandidateEvaluation(
+            model_id=model_id,
+            dataset_size=10,
+            training_seconds=float(info.get("training_cost", 0.0)),
+            training_cost=float(info.get("training_cost", 0.0)),
+            future_losses=dict(info["future_losses"]),
+            observed=observed,
+        )
 
 
 def brute_force_cost(state_costs, num_steps, loss_weight, initial_model_id=(-1, 0)):
@@ -267,6 +334,54 @@ class RetrainOptPlannerTests(unittest.TestCase):
 
         self.assertEqual(len(true_totals), 1)
         self.assertEqual(len(list(planner.engine.iter_cached_candidates())), 0)
+
+    def test_bayes_sequence_acquisition_evaluates_retrain_decisions_from_acquisition_schedule(self):
+        state_costs = {
+            (-1, 0): {
+                "training_cost": 0.0,
+                "future_losses": {0: 100.0, 1: 100.0, 2: 100.0, 3: 100.0},
+            },
+            (0, 1): {
+                "training_cost": 500.0,
+                "future_losses": {0: 100.0, 1: 100.0, 2: 100.0, 3: 100.0},
+            },
+            (1, 1): {
+                "training_cost": 1.0,
+                "future_losses": {1: 1.0, 2: 1.0, 3: 100.0},
+            },
+            (2, 1): {
+                "training_cost": 500.0,
+                "future_losses": {2: 100.0, 3: 100.0},
+            },
+            (3, 1): {
+                "training_cost": 1.0,
+                "future_losses": {3: 1.0},
+            },
+        }
+        planner = RetrainingPlanner(
+            _TinyTimeline(),
+            _NoopAdapter(),
+            config=PlannerConfig(
+                n_choices=(1,),
+                loss_cost_weight=1.0,
+                bayes_iterations=1,
+                bayes_initial_samples=1,
+                bayes_anchor_steps=(0.0,),
+                bayes_candidates_per_iteration=1,
+                acquisition="expected",
+            ),
+        )
+        planner.engine = _StaticEvaluationEngine(state_costs)
+        planner._fit_surrogates = lambda evaluations: _StaticSurrogate(state_costs)
+
+        result = planner.plan(method="bayes")
+
+        self.assertEqual(result.metadata["bayes_selection_strategy"], "sequence")
+        self.assertEqual(
+            result.metadata["bayes_new_candidates_by_iteration"],
+            [[(1, 1), (3, 1)]],
+        )
+        self.assertEqual(result.metadata["bayes_retrain_steps_by_iteration"], [[1, 3]])
 
     def test_empty_and_out_of_range_sampling_is_handled(self):
         timeline = ArrayTimelineAdapter(

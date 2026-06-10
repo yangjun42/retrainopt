@@ -70,9 +70,12 @@ class RetrainingPlanner:
         for model_id in selected:
             self.engine.evaluate_candidate(*model_id)
 
+        bayes_selection_strategy = self._normalized_bayes_selection_strategy()
         bayes_iterations_completed = 0
         bayes_estimated_total_history: List[float] = []
         bayes_estimated_decisions_history: List[List[Decision]] = []
+        bayes_new_candidates_by_iteration: List[List[ModelId]] = []
+        bayes_retrain_steps_by_iteration: List[List[int]] = []
         bayes_stopped_early = False
         for _ in range(max(0, self.config.bayes_iterations)):
             observed = list(self.engine.iter_cached_candidates())
@@ -81,43 +84,38 @@ class RetrainingPlanner:
                 break
 
             surrogate = self._fit_surrogates(observed)
-            best_observed_cost = self._best_observed_immediate_cost(observed)
-            scored_candidates = []
-
-            for model_id in all_candidates:
-                if model_id in {evaluation.model_id for evaluation in observed}:
-                    continue
-                step, n_value = model_id
-                dataset_size = self.timeline.train_size(step)
-                mean_cost, std_cost = self._predict_immediate_cost(
-                    surrogate,
-                    step,
-                    n_value,
-                    dataset_size,
-                )
-                score = self.acquisition.score(
-                    mean_cost,
-                    std_cost,
-                    self.config.acquisition,
-                    beta=self.config.exploration_beta,
-                    best_cost=best_observed_cost,
-                    xi=self.config.improvement_xi,
-                )
-                scored_candidates.append((score, model_id))
-
-            if not scored_candidates:
+            observed_ids = {evaluation.model_id for evaluation in observed}
+            if observed_ids.issuperset(all_candidates):
                 bayes_stopped_early = True
                 break
 
-            scored_candidates.sort(key=lambda item: item[0])
-            next_ids = [
-                model_id
-                for _, model_id in scored_candidates[: max(1, self.config.bayes_candidates_per_iteration)]
-            ]
+            if bayes_selection_strategy == "sequence":
+                acquisition_state_costs = self._build_acquisition_state_costs(
+                    initial_eval,
+                    all_candidates,
+                    observed,
+                    surrogate,
+                )
+                _, acquisition_decisions, _, _ = solve_exact_schedule(
+                    self.timeline.num_steps,
+                    acquisition_state_costs,
+                    loss_cost_weight=self.config.loss_cost_weight,
+                )
+                next_ids = self._new_retrain_candidates_from_sequence(acquisition_decisions, observed_ids)
+                if not next_ids:
+                    next_ids = self._top_scored_unobserved_candidates(all_candidates, observed, surrogate)
+            else:
+                next_ids = self._top_scored_unobserved_candidates(all_candidates, observed, surrogate)
+
+            if not next_ids:
+                bayes_stopped_early = True
+                break
+
             for model_id in next_ids:
                 self.engine.evaluate_candidate(*model_id)
 
             bayes_iterations_completed += 1
+            bayes_new_candidates_by_iteration.append(list(next_ids))
             iteration_observed = list(self.engine.iter_cached_candidates())
             iteration_surrogate = self._fit_surrogates(iteration_observed)
             iteration_state_costs = self._build_estimated_state_costs(
@@ -133,6 +131,13 @@ class RetrainingPlanner:
             )
             bayes_estimated_total_history.append(float(iteration_total))
             bayes_estimated_decisions_history.append(list(iteration_decisions))
+            bayes_retrain_steps_by_iteration.append(
+                [
+                    step
+                    for step, decision in enumerate(iteration_decisions)
+                    if decision.action == DecisionAction.RETRAIN
+                ]
+            )
 
         observed = list(self.engine.iter_cached_candidates())
         if not observed:
@@ -185,9 +190,12 @@ class RetrainingPlanner:
                 "timeline_steps": self.timeline.num_steps,
                 "acquisition": self.config.acquisition,
                 "bayes_backend": self.config.bayes_backend,
+                "bayes_selection_strategy": bayes_selection_strategy,
                 "selected_sequence_evaluated_exactly": True,
                 "bayes_iterations_completed": bayes_iterations_completed,
                 "bayes_stopped_early": bayes_stopped_early,
+                "bayes_new_candidates_by_iteration": bayes_new_candidates_by_iteration,
+                "bayes_retrain_steps_by_iteration": bayes_retrain_steps_by_iteration,
                 "bayes_estimated_total_history": bayes_estimated_total_history,
                 "bayes_true_total_history": bayes_true_total_history,
                 "record_bayes_true_history": bool(self.config.record_bayes_true_history),
@@ -298,6 +306,123 @@ class RetrainingPlanner:
             estimated_state_costs[(step, n_value)] = evaluation.to_state_cost()
         return estimated_state_costs
 
+    def _build_acquisition_state_costs(
+        self,
+        initial_eval: CandidateEvaluation,
+        all_candidates: Sequence[ModelId],
+        observed: Sequence[CandidateEvaluation],
+        surrogate,
+    ) -> Dict[ModelId, Dict[str, Any]]:
+        acquisition_state_costs = {(-1, 0): initial_eval.to_state_cost()}
+        observed_map = {evaluation.model_id: evaluation for evaluation in observed}
+        best_training_cost, best_loss_cost = self._best_observed_component_costs(observed)
+
+        for step, n_value in all_candidates:
+            dataset_size = self.timeline.train_size(step)
+            if (step, n_value) in observed_map:
+                acquisition_state_costs[(step, n_value)] = observed_map[(step, n_value)].to_state_cost()
+                continue
+
+            training_mean, training_std = surrogate.predict_training_cost(step, n_value, dataset_size)
+            training_score = self.acquisition.score(
+                training_mean,
+                training_std,
+                self.config.acquisition,
+                beta=self.config.exploration_beta,
+                best_cost=best_training_cost,
+                xi=self.config.improvement_xi,
+            )
+            future_losses = {}
+            for eval_step in range(step, self.timeline.num_steps):
+                loss_mean, loss_std = surrogate.predict_loss(step, n_value, dataset_size, eval_step)
+                future_losses[eval_step] = self.acquisition.score(
+                    loss_mean,
+                    loss_std,
+                    self.config.acquisition,
+                    beta=self.config.exploration_beta,
+                    best_cost=best_loss_cost,
+                    xi=self.config.improvement_xi,
+                )
+            evaluation = CandidateEvaluation(
+                model_id=(step, n_value),
+                dataset_size=dataset_size,
+                training_seconds=0.0,
+                training_cost=float(training_score),
+                future_losses=future_losses,
+                observed=False,
+            )
+            acquisition_state_costs[(step, n_value)] = evaluation.to_state_cost()
+        return acquisition_state_costs
+
+    def _new_retrain_candidates_from_sequence(
+        self,
+        decisions: Sequence[Decision],
+        observed_ids: set[ModelId],
+    ) -> List[ModelId]:
+        next_ids: List[ModelId] = []
+        seen = set(observed_ids)
+        for step, decision in enumerate(decisions):
+            if decision.action != DecisionAction.RETRAIN:
+                continue
+            model_id = (step, int(decision.n_samples or 0))
+            if model_id in seen:
+                continue
+            next_ids.append(model_id)
+            seen.add(model_id)
+        return next_ids
+
+    def _top_scored_unobserved_candidates(
+        self,
+        all_candidates: Sequence[ModelId],
+        observed: Sequence[CandidateEvaluation],
+        surrogate,
+    ) -> List[ModelId]:
+        observed_ids = {evaluation.model_id for evaluation in observed}
+        best_observed_cost = self._best_observed_immediate_cost(observed)
+        scored_candidates = []
+
+        for model_id in all_candidates:
+            if model_id in observed_ids:
+                continue
+            step, n_value = model_id
+            dataset_size = self.timeline.train_size(step)
+            mean_cost, std_cost = self._predict_immediate_cost(
+                surrogate,
+                step,
+                n_value,
+                dataset_size,
+            )
+            score = self.acquisition.score(
+                mean_cost,
+                std_cost,
+                self.config.acquisition,
+                beta=self.config.exploration_beta,
+                best_cost=best_observed_cost,
+                xi=self.config.improvement_xi,
+            )
+            scored_candidates.append((score, model_id))
+
+        scored_candidates.sort(key=lambda item: item[0])
+        return [
+            model_id
+            for _, model_id in scored_candidates[: max(1, self.config.bayes_candidates_per_iteration)]
+        ]
+
+    def _best_observed_component_costs(
+        self,
+        evaluations: Iterable[CandidateEvaluation],
+    ) -> Tuple[float | None, float | None]:
+        best_training = float("inf")
+        best_loss = float("inf")
+        for evaluation in evaluations:
+            best_training = min(best_training, float(evaluation.training_cost))
+            for loss_value in evaluation.future_losses.values():
+                best_loss = min(best_loss, float(loss_value))
+        return (
+            best_training if best_training < float("inf") else None,
+            best_loss if best_loss < float("inf") else None,
+        )
+
     def _predict_immediate_cost(
         self,
         surrogate,
@@ -319,6 +444,16 @@ class RetrainingPlanner:
             total = evaluation.training_cost + self.config.loss_cost_weight * immediate_loss
             best = min(best, total)
         return best
+
+    def _normalized_bayes_selection_strategy(self) -> str:
+        normalized = (self.config.bayes_selection_strategy or "sequence").strip().lower()
+        if normalized in {"sequence", "schedule", "dp"}:
+            return "sequence"
+        if normalized in {"candidate", "topk", "top-k"}:
+            return "candidate"
+        raise ValueError(
+            "PlannerConfig.bayes_selection_strategy must be 'sequence' or 'candidate'."
+        )
 
     @staticmethod
     def _time_features(step: int, n_value: int, dataset_size: int) -> Tuple[float, ...]:
