@@ -16,6 +16,8 @@ from retrainopt import PlannerConfig, RetrainingPlanner
 from retrainopt.adapters import ArrayTimelineAdapter, PrototypeModelAdapter
 from retrainopt.core.costs import compute_step_cost
 from retrainopt.core.dp import evaluate_decision_sequence, solve_exact_schedule
+from retrainopt.core.surrogate import NearestNeighborRegressor
+import retrainopt.core.surrogate as surrogate_module
 from retrainopt.interfaces import ModelAdapter
 from retrainopt.types import CandidateEvaluation, Decision, DecisionAction
 
@@ -469,6 +471,34 @@ class RetrainOptPlannerTests(unittest.TestCase):
                 PrototypeClassifierAdapter(),
                 config=PlannerConfig(bayes_backend="not-a-backend"),
             )
+
+    @unittest.skipIf(surrogate_module._np is None, "NumPy is not installed.")
+    def test_nearest_neighbor_numpy_path_matches_dependency_free_path(self):
+        rows = [
+            (0.0, 1.0, 5.0),
+            (1.0, 2.0, 4.0),
+            (2.0, 3.0, 3.0),
+            (3.0, 4.0, 2.0),
+            (4.0, 5.0, 1.0),
+        ]
+        targets = [5.0, 4.0, 3.0, 2.0, 1.0]
+        query = (1.5, 2.5, 3.5)
+
+        fast = NearestNeighborRegressor(k_neighbors=3, uncertainty_floor=0.05)
+        fast.fit(rows, targets)
+        fast_mean, fast_std = fast.predict(query)
+
+        original_numpy = surrogate_module._np
+        try:
+            surrogate_module._np = None
+            fallback = NearestNeighborRegressor(k_neighbors=3, uncertainty_floor=0.05)
+            fallback.fit(rows, targets)
+            fallback_mean, fallback_std = fallback.predict(query)
+        finally:
+            surrogate_module._np = original_numpy
+
+        self.assertAlmostEqual(fast_mean, fallback_mean, places=12)
+        self.assertAlmostEqual(fast_std, fallback_std, places=12)
 
     @unittest.skipIf(importlib.util.find_spec("botorch") is not None, "BoTorch extra is installed.")
     def test_botorch_backend_requires_optional_dependency(self):
