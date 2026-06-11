@@ -261,6 +261,13 @@ class RetrainOptPlannerTests(unittest.TestCase):
         self.assertTrue(result.metadata["selected_sequence_evaluated_exactly"])
         self.assertEqual(result.metadata["bayes_iterations_completed"], 2)
         self.assertFalse(result.metadata["bayes_stopped_early"])
+        self.assertEqual(len(result.metadata["bayes_initial_candidates"]), 2)
+        self.assertTrue(
+            all(
+                isinstance(candidate, tuple) and len(candidate) == 2
+                for candidate in result.metadata["bayes_initial_candidates"]
+            )
+        )
         self.assertEqual(len(result.metadata["bayes_estimated_total_history"]), 2)
         self.assertTrue(
             all(
@@ -268,6 +275,15 @@ class RetrainOptPlannerTests(unittest.TestCase):
                 for value in result.metadata["bayes_estimated_total_history"]
             )
         )
+        self.assertEqual(len(result.metadata["bayes_estimated_decisions_history"]), 2)
+        for decision_history in result.metadata["bayes_estimated_decisions_history"]:
+            self.assertEqual(len(decision_history), timeline.num_steps)
+            self.assertTrue(
+                all(
+                    set(decision) == {"action", "n_samples", "trained_at"}
+                    for decision in decision_history
+                )
+            )
         self.assertEqual(len(result.metadata["bayes_true_total_history"]), 2)
         self.assertTrue(
             all(

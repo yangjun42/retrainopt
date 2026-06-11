@@ -201,8 +201,13 @@ class RetrainingPlanner:
                 "selected_sequence_evaluated_exactly": True,
                 "bayes_iterations_completed": bayes_iterations_completed,
                 "bayes_stopped_early": bayes_stopped_early,
+                "bayes_initial_candidates": list(selected),
                 "bayes_new_candidates_by_iteration": bayes_new_candidates_by_iteration,
                 "bayes_retrain_steps_by_iteration": bayes_retrain_steps_by_iteration,
+                "bayes_estimated_decisions_history": [
+                    self._serialize_decisions(iteration_decisions)
+                    for iteration_decisions in bayes_estimated_decisions_history
+                ],
                 "bayes_estimated_total_history": bayes_estimated_total_history,
                 "bayes_true_total_history": bayes_true_total_history,
                 "record_bayes_true_history": bool(self.config.record_bayes_true_history),
@@ -235,6 +240,17 @@ class RetrainingPlanner:
             )
             true_totals.append(float(total_cost))
         return true_totals
+
+    @staticmethod
+    def _serialize_decisions(decisions: Sequence[Decision]) -> List[Dict[str, Any]]:
+        return [
+            {
+                "action": decision.action.value,
+                "n_samples": decision.n_samples,
+                "trained_at": decision.trained_at,
+            }
+            for decision in decisions
+        ]
 
     def _all_candidate_ids(self) -> List[ModelId]:
         candidates: List[ModelId] = []
