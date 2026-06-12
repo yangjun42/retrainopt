@@ -84,6 +84,13 @@ class EvaluationEngine:
 
     def evaluate_candidate(self, step: int, n_samples: int) -> CandidateEvaluation:
         """Evaluate a concrete ``(step, n_samples)`` candidate."""
+        return self._evaluate_candidate(step, n_samples, cache=True)
+
+    def evaluate_candidate_uncached(self, step: int, n_samples: int) -> CandidateEvaluation:
+        """Evaluate a candidate for diagnostics without adding it to the observed cache."""
+        return self._evaluate_candidate(step, n_samples, cache=False)
+
+    def _evaluate_candidate(self, step: int, n_samples: int, *, cache: bool) -> CandidateEvaluation:
         if step < 0 or step >= self.timeline.num_steps:
             raise IndexError(f"Candidate timestep out of range: {step}")
 
@@ -123,9 +130,9 @@ class EvaluationEngine:
             observed=True,
             metadata={"requested_n": int(n_samples)},
         )
-        self._candidate_cache[model_id] = evaluation
+        if cache:
+            self._candidate_cache[model_id] = evaluation
         return evaluation
 
     def iter_cached_candidates(self) -> Iterable[CandidateEvaluation]:
         return self._candidate_cache.values()
-

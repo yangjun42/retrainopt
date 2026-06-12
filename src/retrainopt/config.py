@@ -32,6 +32,7 @@ class PlannerConfig:
     bayes_iterations: int = 5
     bayes_initial_samples: int = 6
     bayes_candidates_per_iteration: int = 1
+    bayes_selection_strategy: str = "sequence"
     bayes_anchor_steps: Sequence[float] = field(default_factory=lambda: (0.0, 0.5, 1.0))
     acquisition: str = "expected"
     bayes_backend: str = "lightweight"
@@ -40,6 +41,7 @@ class PlannerConfig:
     surrogate_k: int = 5
     surrogate_uncertainty_floor: float = 0.05
     bayes_backend_options: Dict[str, Any] = field(default_factory=dict)
+    record_bayes_true_history: bool = False
 
     def resolve_n_choices(self, dataset_size: int) -> List[int]:
         """Resolve configured sample choices for a concrete train block size."""
