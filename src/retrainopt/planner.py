@@ -312,8 +312,12 @@ class RetrainingPlanner:
             training_mean, _ = surrogate.predict_training_cost(step, n_value, dataset_size)
             training_mean = max(0.0, float(training_mean))
             future_losses = {}
-            for eval_step in range(step, self.timeline.num_steps):
-                loss_mean, _ = surrogate.predict_loss(step, n_value, dataset_size, eval_step)
+            for eval_step, loss_mean, _ in self._predict_future_losses(
+                surrogate,
+                step,
+                n_value,
+                dataset_size,
+            ):
                 future_losses[eval_step] = max(0.0, float(loss_mean))
             evaluation = CandidateEvaluation(
                 model_id=(step, n_value),
@@ -353,8 +357,12 @@ class RetrainingPlanner:
                 xi=self.config.improvement_xi,
             )
             future_losses = {}
-            for eval_step in range(step, self.timeline.num_steps):
-                loss_mean, loss_std = surrogate.predict_loss(step, n_value, dataset_size, eval_step)
+            for eval_step, loss_mean, loss_std in self._predict_future_losses(
+                surrogate,
+                step,
+                n_value,
+                dataset_size,
+            ):
                 future_losses[eval_step] = self.acquisition.score(
                     loss_mean,
                     loss_std,
@@ -373,6 +381,27 @@ class RetrainingPlanner:
             )
             acquisition_state_costs[(step, n_value)] = evaluation.to_state_cost()
         return acquisition_state_costs
+
+    def _predict_future_losses(
+        self,
+        surrogate,
+        step: int,
+        n_value: int,
+        dataset_size: int,
+    ) -> List[Tuple[int, float, float]]:
+        eval_steps = list(range(step, self.timeline.num_steps))
+        batch_predict = getattr(surrogate, "predict_losses", None)
+        if callable(batch_predict):
+            predictions = batch_predict(step, n_value, dataset_size, eval_steps)
+        else:
+            predictions = [
+                surrogate.predict_loss(step, n_value, dataset_size, eval_step)
+                for eval_step in eval_steps
+            ]
+        return [
+            (eval_step, float(mean), float(std))
+            for eval_step, (mean, std) in zip(eval_steps, predictions)
+        ]
 
     def _new_retrain_candidates_from_sequence(
         self,

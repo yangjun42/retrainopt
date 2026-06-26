@@ -26,6 +26,19 @@ class BaseFittedSurrogate(ABC):
     def predict_loss(self, step: int, n_value: int, dataset_size: int, eval_step: int) -> Tuple[float, float]:
         """Predict loss mean/std for a candidate and evaluation step."""
 
+    def predict_losses(
+        self,
+        step: int,
+        n_value: int,
+        dataset_size: int,
+        eval_steps: Iterable[int],
+    ) -> List[Tuple[float, float]]:
+        """Predict losses for a candidate over many evaluation steps."""
+        return [
+            self.predict_loss(step, n_value, dataset_size, eval_step)
+            for eval_step in eval_steps
+        ]
+
 
 class BaseBayesBackend(ABC):
     """Factory interface for bayes surrogate backends."""
@@ -56,6 +69,19 @@ class _LightweightFittedSurrogate(BaseFittedSurrogate):
 
     def predict_loss(self, step: int, n_value: int, dataset_size: int, eval_step: int) -> Tuple[float, float]:
         return self.loss_regressor.predict(self.loss_feature_fn(step, n_value, dataset_size, eval_step))
+
+    def predict_losses(
+        self,
+        step: int,
+        n_value: int,
+        dataset_size: int,
+        eval_steps: Iterable[int],
+    ) -> List[Tuple[float, float]]:
+        feature_rows = [
+            self.loss_feature_fn(step, n_value, dataset_size, eval_step)
+            for eval_step in eval_steps
+        ]
+        return self.loss_regressor.predict_many(feature_rows)
 
 
 class LightweightBayesBackend(BaseBayesBackend):

@@ -84,6 +84,22 @@ class NearestNeighborRegressor:
         std = math.sqrt(max(0.0, variance)) + self.uncertainty_floor * distance_scale
         return mean, std
 
+    def predict_many(
+        self,
+        rows: Iterable[Sequence[float]],
+        *,
+        batch_size: int = 128,
+    ) -> List[Tuple[float, float]]:
+        """Predict many rows while preserving ``predict`` semantics."""
+        if not self._rows:
+            raise ValueError("NearestNeighborRegressor.predict_many() called before fit().")
+        query_rows = [tuple(map(float, row)) for row in rows]
+        if not query_rows:
+            return []
+        if self._matrix is not None:
+            return self._predict_many_numpy(query_rows, batch_size=max(1, int(batch_size)))
+        return [self.predict(row) for row in query_rows]
+
     def _predict_numpy(self, row: Sequence[float]) -> Tuple[float, float]:
         query = _np.asarray(tuple(map(float, row)), dtype=float)
         scaled = (self._matrix - query) / self._ranges_array
@@ -115,6 +131,60 @@ class NearestNeighborRegressor:
         distance_scale = float(_np.mean(nearest_distances))
         std = math.sqrt(max(0.0, variance)) + self.uncertainty_floor * distance_scale
         return mean, std
+
+    def _predict_many_numpy(
+        self,
+        rows: Sequence[Sequence[float]],
+        *,
+        batch_size: int,
+    ) -> List[Tuple[float, float]]:
+        predictions: List[Tuple[float, float]] = []
+        target_count = int(self._targets.size)
+        k_value = min(self.k_neighbors, target_count)
+        if k_value <= 0:
+            raise ValueError("NearestNeighborRegressor.predict_many() called before fit().")
+
+        for start in range(0, len(rows), batch_size):
+            query = _np.asarray(rows[start : start + batch_size], dtype=float)
+            scaled = (self._matrix[None, :, :] - query[:, None, :]) / self._ranges_array
+            distances = _np.sqrt(_np.sum(scaled * scaled, axis=2))
+            exact_mask = distances <= 1e-12
+            has_exact = _np.any(exact_mask, axis=1)
+            batch_predictions: List[Tuple[float, float] | None] = [None] * int(query.shape[0])
+
+            for row_index in _np.flatnonzero(has_exact):
+                exact_values = self._targets[exact_mask[row_index]]
+                mean = float(_np.mean(exact_values))
+                if int(exact_values.size) == 1:
+                    batch_predictions[int(row_index)] = (mean, 0.0)
+                    continue
+                variance = float(_np.mean((exact_values - mean) ** 2))
+                batch_predictions[int(row_index)] = (mean, math.sqrt(max(0.0, variance)))
+
+            non_exact_indices = _np.flatnonzero(~has_exact)
+            if int(non_exact_indices.size) > 0:
+                non_exact_distances = distances[non_exact_indices]
+                if k_value == target_count:
+                    nearest_idx = _np.argsort(non_exact_distances, axis=1)[:, :k_value]
+                else:
+                    nearest_idx = _np.argpartition(non_exact_distances, k_value - 1, axis=1)[:, :k_value]
+                    order = _np.argsort(_np.take_along_axis(non_exact_distances, nearest_idx, axis=1), axis=1)
+                    nearest_idx = _np.take_along_axis(nearest_idx, order, axis=1)
+
+                nearest_distances = _np.take_along_axis(non_exact_distances, nearest_idx, axis=1)
+                nearest_targets = self._targets[nearest_idx]
+                weights = 1.0 / (nearest_distances + 1e-6)
+                weight_sum = _np.sum(weights, axis=1)
+                means = _np.sum(weights * nearest_targets, axis=1) / weight_sum
+                variances = _np.sum(weights * ((nearest_targets - means[:, None]) ** 2), axis=1) / weight_sum
+                distance_scales = _np.mean(nearest_distances, axis=1)
+                stds = _np.sqrt(_np.maximum(0.0, variances)) + self.uncertainty_floor * distance_scales
+
+                for offset, row_index in enumerate(non_exact_indices):
+                    batch_predictions[int(row_index)] = (float(means[offset]), float(stds[offset]))
+
+            predictions.extend(prediction for prediction in batch_predictions if prediction is not None)
+        return predictions
 
     def _distance(self, left: Sequence[float], right: Sequence[float]) -> float:
         total = 0.0
