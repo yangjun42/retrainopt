@@ -10,6 +10,11 @@ try:  # pragma: no cover - exercised only when numpy is installed.
 except ImportError:  # pragma: no cover - dependency-free fallback.
     _np = None
 
+try:  # pragma: no cover - exercised only when the sklearn extra is installed.
+    from sklearn.neighbors import NearestNeighbors as _SklearnNearestNeighbors
+except ImportError:  # pragma: no cover - optional acceleration path.
+    _SklearnNearestNeighbors = None
+
 
 class NearestNeighborRegressor:
     """A tiny distance-weighted regressor with uncertainty estimates."""
@@ -24,6 +29,8 @@ class NearestNeighborRegressor:
         self._targets = None
         self._mins_array = None
         self._ranges_array = None
+        self._scaled_matrix = None
+        self._neighbor_index = None
 
     def fit(self, rows: Iterable[Sequence[float]], targets: Iterable[float]) -> None:
         self._rows = [(tuple(map(float, row)), float(target)) for row, target in zip(rows, targets)]
@@ -34,6 +41,8 @@ class NearestNeighborRegressor:
             self._targets = None
             self._mins_array = None
             self._ranges_array = None
+            self._scaled_matrix = None
+            self._neighbor_index = None
             return
 
         dimension = len(self._rows[0][0])
@@ -50,6 +59,16 @@ class NearestNeighborRegressor:
             self._targets = _np.asarray([target for _, target in self._rows], dtype=float)
             self._mins_array = _np.asarray(self._mins, dtype=float)
             self._ranges_array = _np.asarray(self._ranges, dtype=float)
+            self._scaled_matrix = (self._matrix - self._mins_array) / self._ranges_array
+            if _SklearnNearestNeighbors is not None:
+                self._neighbor_index = _SklearnNearestNeighbors(
+                    n_neighbors=min(self.k_neighbors, len(self._rows)),
+                    algorithm="auto",
+                    metric="euclidean",
+                )
+                self._neighbor_index.fit(self._scaled_matrix)
+            else:
+                self._neighbor_index = None
 
     def predict(self, row: Sequence[float]) -> Tuple[float, float]:
         if not self._rows:
@@ -97,12 +116,15 @@ class NearestNeighborRegressor:
         if not query_rows:
             return []
         if self._matrix is not None:
+            if self._neighbor_index is not None:
+                return self._predict_many_sklearn(query_rows, batch_size=max(1, int(batch_size)))
             return self._predict_many_numpy(query_rows, batch_size=max(1, int(batch_size)))
         return [self.predict(row) for row in query_rows]
 
     def _predict_numpy(self, row: Sequence[float]) -> Tuple[float, float]:
         query = _np.asarray(tuple(map(float, row)), dtype=float)
-        scaled = (self._matrix - query) / self._ranges_array
+        scaled_query = (query - self._mins_array) / self._ranges_array
+        scaled = self._scaled_matrix - scaled_query
         distances = _np.sqrt(_np.sum(scaled * scaled, axis=1))
         exact_mask = distances <= 1e-12
         if bool(_np.any(exact_mask)):
@@ -178,6 +200,61 @@ class NearestNeighborRegressor:
                 means = _np.sum(weights * nearest_targets, axis=1) / weight_sum
                 variances = _np.sum(weights * ((nearest_targets - means[:, None]) ** 2), axis=1) / weight_sum
                 distance_scales = _np.mean(nearest_distances, axis=1)
+                stds = _np.sqrt(_np.maximum(0.0, variances)) + self.uncertainty_floor * distance_scales
+
+                for offset, row_index in enumerate(non_exact_indices):
+                    batch_predictions[int(row_index)] = (float(means[offset]), float(stds[offset]))
+
+            predictions.extend(prediction for prediction in batch_predictions if prediction is not None)
+        return predictions
+
+    def _predict_many_sklearn(
+        self,
+        rows: Sequence[Sequence[float]],
+        *,
+        batch_size: int,
+    ) -> List[Tuple[float, float]]:
+        predictions: List[Tuple[float, float]] = []
+        target_count = int(self._targets.size)
+        k_value = min(self.k_neighbors, target_count)
+        if k_value <= 0:
+            raise ValueError("NearestNeighborRegressor.predict_many() called before fit().")
+
+        for start in range(0, len(rows), batch_size):
+            query = _np.asarray(rows[start : start + batch_size], dtype=float)
+            scaled_query = (query - self._mins_array) / self._ranges_array
+            nearest_distances, nearest_idx = self._neighbor_index.kneighbors(
+                scaled_query,
+                n_neighbors=k_value,
+                return_distance=True,
+            )
+            exact_rows = _np.flatnonzero(nearest_distances[:, 0] <= 1e-12)
+            batch_predictions: List[Tuple[float, float] | None] = [None] * int(query.shape[0])
+
+            for row_index in exact_rows:
+                exact_idx = self._neighbor_index.radius_neighbors(
+                    scaled_query[int(row_index) : int(row_index) + 1],
+                    radius=1e-12,
+                    return_distance=False,
+                )[0]
+                exact_values = self._targets[exact_idx]
+                mean = float(_np.mean(exact_values))
+                if int(exact_values.size) == 1:
+                    batch_predictions[int(row_index)] = (mean, 0.0)
+                    continue
+                variance = float(_np.mean((exact_values - mean) ** 2))
+                batch_predictions[int(row_index)] = (mean, math.sqrt(max(0.0, variance)))
+
+            non_exact_indices = _np.flatnonzero(nearest_distances[:, 0] > 1e-12)
+            if int(non_exact_indices.size) > 0:
+                non_exact_distances = nearest_distances[non_exact_indices]
+                non_exact_idx = nearest_idx[non_exact_indices]
+                nearest_targets = self._targets[non_exact_idx]
+                weights = 1.0 / (non_exact_distances + 1e-6)
+                weight_sum = _np.sum(weights, axis=1)
+                means = _np.sum(weights * nearest_targets, axis=1) / weight_sum
+                variances = _np.sum(weights * ((nearest_targets - means[:, None]) ** 2), axis=1) / weight_sum
+                distance_scales = _np.mean(non_exact_distances, axis=1)
                 stds = _np.sqrt(_np.maximum(0.0, variances)) + self.uncertainty_floor * distance_scales
 
                 for offset, row_index in enumerate(non_exact_indices):

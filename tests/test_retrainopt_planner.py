@@ -643,8 +643,38 @@ class RetrainOptPlannerTests(unittest.TestCase):
 
         self.assertEqual(len(batch_predictions), len(single_predictions))
         for (batch_mean, batch_std), (single_mean, single_std) in zip(batch_predictions, single_predictions):
-            self.assertAlmostEqual(batch_mean, single_mean, places=12)
-            self.assertAlmostEqual(batch_std, single_std, places=12)
+            self.assertAlmostEqual(batch_mean, single_mean, delta=1e-10)
+            self.assertAlmostEqual(batch_std, single_std, delta=1e-10)
+
+    @unittest.skipIf(
+        surrogate_module._np is None or importlib.util.find_spec("sklearn") is None,
+        "NumPy and scikit-learn are required for indexed nearest-neighbor tests.",
+    )
+    def test_nearest_neighbor_builds_optional_sklearn_index_without_changing_predictions(self):
+        rows = [
+            (0.0, 0.0, 0.0),
+            (0.0, 0.0, 0.0),
+            (1.0, 2.0, 3.0),
+            (2.0, 3.0, 4.0),
+            (3.0, 4.0, 5.0),
+            (4.0, 5.0, 6.0),
+        ]
+        targets = [2.0, 4.0, 8.0, 16.0, 32.0, 64.0]
+        queries = [
+            (0.0, 0.0, 0.0),
+            (1.5, 2.5, 3.5),
+            (4.1, 5.1, 6.1),
+        ]
+        regressor = NearestNeighborRegressor(k_neighbors=3, uncertainty_floor=0.05)
+        regressor.fit(rows, targets)
+
+        self.assertIsNotNone(getattr(regressor, "_neighbor_index", None))
+        batch_predictions = regressor.predict_many(queries)
+        single_predictions = [regressor.predict(query) for query in queries]
+
+        for (batch_mean, batch_std), (single_mean, single_std) in zip(batch_predictions, single_predictions):
+            self.assertAlmostEqual(batch_mean, single_mean, delta=1e-10)
+            self.assertAlmostEqual(batch_std, single_std, delta=1e-10)
 
     @unittest.skipIf(importlib.util.find_spec("botorch") is not None, "BoTorch extra is installed.")
     def test_botorch_backend_requires_optional_dependency(self):
