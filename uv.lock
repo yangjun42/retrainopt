@@ -1580,7 +1580,7 @@ wheels = [
 
 [[package]]
 name = "retrainopt"
-version = "0.3.0"
+version = "0.3.1rc1"
 source = { editable = "." }
 
 [package.optional-dependencies]

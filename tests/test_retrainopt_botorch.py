@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import math
 import sys
 import time
 import unittest
 import warnings
 from pathlib import Path
+from unittest.mock import patch
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
@@ -21,6 +23,7 @@ except ImportError:  # pragma: no cover - optional dependency
 
 from retrainopt import PlannerConfig, RetrainingPlanner
 from retrainopt.adapters import ArrayTimelineAdapter
+from retrainopt.core.bayes_backends import _BoTorchRegressor
 from retrainopt.interfaces import ModelAdapter
 
 
@@ -69,6 +72,8 @@ class TimedPrototypeClassifierAdapter(ModelAdapter):
 @unittest.skipUnless(BOTORCH_AVAILABLE, "BoTorch extra is not installed.")
 class RetrainOptBoTorchTests(unittest.TestCase):
     def test_botorch_backend_runs_end_to_end(self):
+        from botorch.fit import fit_gpytorch_mll
+
         timeline = ArrayTimelineAdapter(
             train_blocks=[
                 [((0.0,), 0), ((0.2,), 0), ((0.8,), 1), ((1.0,), 1)],
@@ -90,22 +95,68 @@ class RetrainOptBoTorchTests(unittest.TestCase):
                 time_cost_weight=50.0,
                 loss_cost_weight=1.0,
                 random_seed=7,
-                bayes_iterations=2,
+                bayes_iterations=1,
                 bayes_initial_samples=2,
+                # Default anchors would measure all six candidates before search.
+                bayes_anchor_steps=(),
                 bayes_candidates_per_iteration=1,
                 bayes_backend="botorch",
             ),
         )
 
-        with warnings.catch_warnings():
+        predictions = []
+        original_predict = _BoTorchRegressor.predict
+
+        def record_prediction(regressor, row):
+            moments = original_predict(regressor, row)
+            predictions.append((len(row), moments))
+            return moments
+
+        # These spies delegate to the actual optimizer and posterior prediction.
+        with warnings.catch_warnings(), patch(
+            "botorch.fit.fit_gpytorch_mll", wraps=fit_gpytorch_mll
+        ) as fit_gp, patch.object(
+            _BoTorchRegressor, "predict", autospec=True, side_effect=record_prediction
+        ) as predict:
             warnings.simplefilter("ignore", category=InputDataWarning)
             result = planner.plan(method="bayes")
+
+        self.assertGreaterEqual(fit_gp.call_count, 2)  # Training-cost and loss GPs.
+        self.assertGreater(predict.call_count, 0)
+        self.assertEqual(len(result.metadata["bayes_initial_candidates"]), 2)
+        self.assertEqual(result.metadata["candidate_count"], 6)
+        self.assertEqual(result.metadata["bayes_iterations_completed"], 1)
+        self.assertLess(
+            result.metadata["surrogate_evaluated_candidates"],
+            result.metadata["candidate_count"],
+        )
+        # Both surrogates must predict unobserved candidates with real uncertainty.
+        self.assertEqual({dimension for dimension, _ in predictions}, {4, 6})
+        for dimension in (4, 6):
+            moments = [value for width, value in predictions if width == dimension]
+            self.assertTrue(all(
+                math.isfinite(mean) and math.isfinite(std) and std >= 0.0
+                for mean, std in moments
+            ))
+            self.assertTrue(any(std > 0.0 for _, std in moments))
 
         self.assertEqual(result.method, "bayes")
         self.assertEqual(result.metadata["bayes_backend"], "botorch")
         self.assertTrue(result.metadata["selected_sequence_evaluated_exactly"])
         self.assertEqual(len(result.decisions), timeline.num_steps)
-        self.assertGreaterEqual(result.metadata["evaluated_candidates"], 1)
+        self.assertGreater(result.metadata["evaluated_candidates"], 2)
+        self.assertTrue(math.isfinite(result.total_cost))
+        self.assertTrue(math.isfinite(result.estimated_total_cost))
+        self.assertAlmostEqual(result.total_cost, result.training_cost + result.weighted_loss_cost)
+
+
+class BoTorchFallbackTests(unittest.TestCase):
+    def test_one_row_returns_constant_mean_and_zero_uncertainty(self):
+        # The existing one-row fallback does not need the optional dependencies.
+        regressor = _BoTorchRegressor([(1.0, 2.0)], [3.25])
+
+        self.assertEqual(regressor.predict((1.0, 2.0)), (3.25, 0.0))
+        self.assertEqual(regressor.predict((100.0, -20.0)), (3.25, 0.0))
 
 
 if __name__ == "__main__":

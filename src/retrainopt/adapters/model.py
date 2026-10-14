@@ -2,30 +2,52 @@
 
 from __future__ import annotations
 
-from numbers import Integral
+from collections.abc import Mapping, Set
+import math
+from numbers import Integral, Real
 from typing import Any, Callable, Iterable, List, Sequence, Tuple
 
 from ..interfaces import ModelAdapter
+
+
+def _class_label(value: Any) -> int:
+    """Normalize an integer-valued numeric label without changing its class."""
+    if isinstance(value, bool) or not isinstance(value, Real):
+        raise ValueError("Class labels must be finite integers, not booleans or strings.")
+    if isinstance(value, Integral):
+        return int(value)
+    if not math.isfinite(value) or value != int(value):
+        raise ValueError("Class labels must be finite integers.")
+    return int(value)
 
 
 def _split_labeled_block(block: Any) -> Tuple[List[Any], List[int]]:
     features: List[Any] = []
     labels: List[int] = []
     for item in block:
-        if not isinstance(item, Sequence) or len(item) != 2:
+        if isinstance(item, (str, bytes, bytearray, Mapping, Set)):
             raise ValueError("Expected labeled items shaped like (features, label).")
-        features.append(item[0])
-        labels.append(int(item[1]))
+        try:
+            values, label = item
+        except (TypeError, ValueError) as exc:
+            raise ValueError("Expected labeled items shaped like (features, label).") from exc
+        features.append(values)
+        labels.append(_class_label(label))
     return features, labels
 
 
 class SklearnModelAdapter(ModelAdapter):
-    """ModelAdapter for sklearn classifiers."""
+    """ModelAdapter for sklearn classifiers with integer class labels.
+
+    Finite integer-valued real labels, such as ``1.0``, are also accepted.
+    Fractional labels, booleans and strings are rejected rather than coerced.
+    """
 
     def __init__(self, model_factory: Callable[[], Any] | Any):
         self.model_factory = model_factory
 
     def fit(self, train_data: Any, *, step: int, n_samples: int, random_seed: int) -> Any:
+        features, labels = _split_labeled_block(train_data)
         estimator = self._build_estimator()
         if hasattr(estimator, "get_params"):
             seed_params = {
@@ -35,7 +57,6 @@ class SklearnModelAdapter(ModelAdapter):
             }
             if seed_params:
                 estimator.set_params(**seed_params)
-        features, labels = _split_labeled_block(train_data)
         estimator.fit(features, labels)
         return estimator
 
@@ -67,39 +88,51 @@ class SklearnModelAdapter(ModelAdapter):
 
 
 class PrototypeModelAdapter(ModelAdapter):
-    """Dependency-free prototype classifier for small structured datasets."""
+    """Dependency-free prototype classifier with integer class labels.
+
+    Labels follow the same numeric contract as ``SklearnModelAdapter``.
+    Features are finite real scalars or nonempty flat lists/tuples of finite
+    real values. Every train/evaluation sample must have the trained feature
+    dimension. Boolean feature values remain valid numeric indicators.
+    """
 
     def fit(self, train_data: Any, *, step: int, n_samples: int, random_seed: int) -> Any:
-        if not train_data:
+        features, labels = _split_labeled_block(train_data)
+        if not features:
             return {"prototypes": {}, "majority": 0}
 
+        vectors = self._feature_vectors(features)
         grouped = {}
         counts = {}
-        for features, label in train_data:
-            feature_vector = self._flatten_features(features)
-            grouped.setdefault(int(label), []).append(feature_vector)
-            counts[int(label)] = counts.get(int(label), 0) + 1
+        for feature_vector, label in zip(vectors, labels):
+            grouped.setdefault(label, []).append(feature_vector)
+            counts[label] = counts.get(label, 0) + 1
 
         prototypes = {}
         for label, vectors in grouped.items():
             dimension = len(vectors[0])
             mean_vector = []
             for index in range(dimension):
-                mean_vector.append(sum(vector[index] for vector in vectors) / len(vectors))
+                mean = sum(vector[index] for vector in vectors) / len(vectors)
+                if not math.isfinite(mean):
+                    raise ValueError("Prototype mean overflowed; rescale feature values.")
+                mean_vector.append(mean)
             prototypes[label] = tuple(mean_vector)
 
         majority = max(counts.items(), key=lambda item: item[1])[0]
         return {"prototypes": prototypes, "majority": majority}
 
     def evaluate(self, model: Any, eval_data: Any, *, step: int) -> float:
-        if not eval_data:
+        features, labels = _split_labeled_block(eval_data)
+        if not features:
             raise ValueError("Evaluation data must not be empty.")
 
         mistakes = 0
         prototypes = model.get("prototypes", {})
         majority = model.get("majority", 0)
-        for features, label in eval_data:
-            feature_vector = self._flatten_features(features)
+        dimension = len(next(iter(prototypes.values()))) if prototypes else None
+        vectors = self._feature_vectors(features, dimension=dimension)
+        for feature_vector, label in zip(vectors, labels):
             if prototypes:
                 predicted = min(
                     prototypes.items(),
@@ -107,19 +140,49 @@ class PrototypeModelAdapter(ModelAdapter):
                 )[0]
             else:
                 predicted = majority
-            if int(predicted) != int(label):
+            if predicted != label:
                 mistakes += 1
-        return mistakes / len(eval_data)
+        return mistakes / len(labels)
+
+    @classmethod
+    def _feature_vectors(cls, features: Sequence[Any], *, dimension: int | None = None) -> List[Tuple[float, ...]]:
+        vectors = []
+        for values in features:
+            vector = cls._flatten_features(values)
+            if dimension is None:
+                dimension = len(vector)
+            elif len(vector) != dimension:
+                raise ValueError(f"Prototype features must have a consistent dimension of {dimension}.")
+            vectors.append(vector)
+        return vectors
 
     @staticmethod
     def _flatten_features(features: Any) -> Tuple[float, ...]:
-        if isinstance(features, (list, tuple)):
-            return tuple(float(value) for value in features)
-        return (float(features),)
+        values = features if isinstance(features, (list, tuple)) else (features,)
+        if not values:
+            raise ValueError("Prototype features must not be empty.")
+        vector = []
+        for value in values:
+            if not isinstance(value, Real):
+                raise ValueError("Prototype features must be finite real scalars or a flat numeric vector.")
+            try:
+                number = float(value)
+            except OverflowError as exc:
+                raise ValueError("Prototype features must be finite real values.") from exc
+            if not math.isfinite(number):
+                raise ValueError("Prototype features must be finite real values.")
+            vector.append(number)
+        return tuple(vector)
 
     @staticmethod
     def _squared_distance(left: Sequence[float], right: Sequence[float]) -> float:
-        return sum((float(lv) - float(rv)) ** 2 for lv, rv in zip(left, right))
+        distance = 0.0
+        for lv, rv in zip(left, right):
+            difference = lv - rv
+            distance += difference * difference
+        if not math.isfinite(distance):
+            raise ValueError("Prototype distance overflowed; rescale feature values.")
+        return distance
 
 
 class TorchModelAdapter(ModelAdapter):

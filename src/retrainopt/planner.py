@@ -257,7 +257,7 @@ class RetrainingPlanner:
     def _validate_evaluation(self, evaluation: CandidateEvaluation, expected_id: ModelId) -> CandidateEvaluation:
         if getattr(evaluation, "model_id", None) != expected_id:
             raise ValueError(f"EvaluationProvider returned the wrong model_id; expected {expected_id!r}.")
-        validate_model_costs(expected_id, evaluation.to_state_cost(), self.timeline.num_steps)
+        validate_model_costs(evaluation.model_id, evaluation.to_state_cost(), self.timeline.num_steps)
         seconds = evaluation.training_seconds
         if isinstance(seconds, bool) or not isinstance(seconds, Real) or not math.isfinite(seconds) or seconds < 0:
             raise ValueError(f"EvaluationProvider training_seconds for {expected_id!r} must be finite and nonnegative.")
@@ -266,7 +266,7 @@ class RetrainingPlanner:
             raise ValueError(f"EvaluationProvider dataset_size for {expected_id!r} must be a nonnegative integer.")
         if expected_id != (-1, 0) and size != self.timeline.train_size(expected_id[0]):
             raise ValueError(f"EvaluationProvider dataset_size for {expected_id!r} disagrees with the timeline.")
-        if not evaluation.observed:
+        if evaluation.observed is not True:
             raise ValueError(f"EvaluationProvider must return observed costs for {expected_id!r}.")
         return evaluation
 
