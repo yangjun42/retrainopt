@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 import re
+from numbers import Real
 from typing import Dict, Tuple
 
 
@@ -19,19 +20,21 @@ class AcquisitionManager:
     """Compute acquisition scores to *minimize* during candidate selection."""
 
     def parse_name(self, name: str) -> Tuple[str, Dict[str, float]]:
-        normalized = (name or "expected").strip().lower()
+        if not isinstance(name, str):
+            raise ValueError("acquisition must be a supported name.")
+        normalized = name.strip().lower()
         if normalized in {"expected", "expected_cost"}:
             return "expected", {}
         if normalized == "variance":
             return "variance", {}
         if normalized in {"optimistic", "lcb"}:
-            return "optimistic", {"beta": 1.0}
+            return "optimistic", {}
         if normalized in {"pessimistic", "ucb"}:
-            return "pessimistic", {"beta": 1.0}
+            return "pessimistic", {}
         if normalized in {"expected_improvement", "ei"}:
-            return "expected_improvement", {"xi": 0.01}
+            return "expected_improvement", {}
         if normalized in {"probability_improvement", "pi"}:
-            return "probability_improvement", {"xi": 0.1}
+            return "probability_improvement", {}
 
         match = re.fullmatch(r"(lcb|ucb)_beta_([0-9]+(?:\.[0-9]+)?)", normalized)
         if match:
@@ -46,7 +49,7 @@ class AcquisitionManager:
                 {"xi": float(xi_value)},
             )
 
-        return "expected", {}
+        raise ValueError(f"Unknown acquisition: {name}")
 
     def score(
         self,
@@ -58,37 +61,46 @@ class AcquisitionManager:
         best_cost: float | None = None,
         xi: float = 0.01,
     ) -> float:
-        """Return an acquisition score where lower is better."""
+        """Score a complete stage cost; EI/PI are zero at zero variance.
+
+        ``best_cost`` and ``xi`` use the same weighted cost units as ``mean``.
+        Only explicit parameters embedded in a name override keyword values.
+        """
         acq_type, parsed = self.parse_name(acquisition)
-        beta = float(parsed.get("beta", beta))
-        xi = float(parsed.get("xi", xi))
-        std = max(0.0, float(std))
+        beta = parsed.get("beta", beta)
+        xi = parsed.get("xi", xi)
+        for label, value in (("mean", mean), ("std", std), ("beta", beta), ("xi", xi)):
+            if isinstance(value, bool) or not isinstance(value, Real) or not math.isfinite(value):
+                raise ValueError(f"{label} must be a finite real number.")
+        if std < 0 or beta < 0 or xi < 0:
+            raise ValueError("std, beta and xi must be nonnegative.")
+        if best_cost is not None and (
+            isinstance(best_cost, bool) or not isinstance(best_cost, Real) or not math.isfinite(best_cost)
+        ):
+            raise ValueError("best_cost must be finite when provided.")
 
         if acq_type == "expected":
             return float(mean)
         if acq_type == "variance":
-            return -(std ** 2)
-        if acq_type == "optimistic":
-            return float(mean) - beta * std
-        if acq_type == "pessimistic":
-            return float(mean) + beta * std
-
-        if best_cost is None:
-            best_cost = float(mean)
-
-        if std <= 1e-12:
-            improvement = max(float(best_cost) - float(mean) - xi, 0.0)
+            result = -(std * std)
+        elif acq_type == "optimistic":
+            result = float(mean) - beta * std
+        elif acq_type == "pessimistic":
+            result = float(mean) + beta * std
+        else:
+            if best_cost is None:
+                raise ValueError("EI/PI require a best observed complete stage cost.")
+            if std == 0.0:
+                return 0.0
+            improvement = float(best_cost) - float(mean) - xi
+            if not math.isfinite(improvement):
+                raise ValueError("Acquisition improvement overflowed; rescale the cost units.")
+            z_value = improvement / std
             if acq_type == "expected_improvement":
-                return -improvement
-            if acq_type == "probability_improvement":
-                return -float(improvement > 0.0)
-            return float(mean)
-
-        z_value = (float(best_cost) - float(mean) - xi) / std
-        if acq_type == "expected_improvement":
-            improvement = (float(best_cost) - float(mean) - xi) * _normal_cdf(z_value) + std * _normal_pdf(z_value)
-            return -max(improvement, 0.0)
-        if acq_type == "probability_improvement":
-            return -_normal_cdf(z_value)
-        return float(mean)
+                result = -max(improvement * _normal_cdf(z_value) + std * _normal_pdf(z_value), 0.0)
+            else:
+                result = -_normal_cdf(z_value)
+        if not math.isfinite(result):
+            raise ValueError("Acquisition score overflowed; rescale the cost units.")
+        return float(result)
 

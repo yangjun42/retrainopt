@@ -4,10 +4,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
+from numbers import Integral
 from typing import Any, Dict, List, Optional, Tuple
 
 
 ModelId = Tuple[int, int]
+RESULT_SCHEMA_VERSION = 2
+METADATA_SCHEMA_VERSION = 1
+ALGORITHM_VERSION = "0.2"
 
 
 class DecisionAction(str, Enum):
@@ -25,6 +29,20 @@ class Decision:
     n_samples: Optional[int] = None
     trained_at: Optional[int] = None
 
+    def __post_init__(self) -> None:
+        if not isinstance(self.action, DecisionAction):
+            raise ValueError("action must be a DecisionAction enum value.")
+        if self.action == DecisionAction.KEEP:
+            if self.n_samples is not None or self.trained_at is not None:
+                raise ValueError("KEEP must not specify n_samples or trained_at.")
+        else:
+            if isinstance(self.n_samples, bool) or not isinstance(self.n_samples, Integral) or self.n_samples <= 0:
+                raise ValueError("RETRAIN requires a positive integer n_samples.")
+            if self.trained_at is not None and (
+                isinstance(self.trained_at, bool) or not isinstance(self.trained_at, Integral) or self.trained_at < 0
+            ):
+                raise ValueError("trained_at must be a nonnegative integer when provided.")
+
 
 @dataclass
 class PlanResult:
@@ -37,10 +55,12 @@ class PlanResult:
     loss_cost: float
     estimated_total_cost: Optional[float] = None
     metadata: Dict[str, Any] = field(default_factory=dict)
+    weighted_loss_cost: Optional[float] = None
 
     def to_dict(self) -> Dict[str, Any]:
         """Serialize the result to a plain dictionary."""
         return {
+            "schema_version": RESULT_SCHEMA_VERSION,
             "method": self.method,
             "decisions": [
                 {
@@ -53,6 +73,7 @@ class PlanResult:
             "total_cost": self.total_cost,
             "training_cost": self.training_cost,
             "loss_cost": self.loss_cost,
+            "weighted_loss_cost": self.weighted_loss_cost,
             "estimated_total_cost": self.estimated_total_cost,
             "metadata": dict(self.metadata),
         }

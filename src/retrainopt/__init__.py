@@ -9,16 +9,20 @@ The public API is intentionally small:
 - ``RetrainingPlanner`` produces retraining decision sequences.
 """
 
-from .config import PlannerConfig
-from .interfaces import ModelAdapter, TimelineDataset
-from .planner import RetrainingPlanner
-from .types import Decision, DecisionAction, PlanResult
+from importlib.metadata import version
 
-__version__ = "0.1.0"
+from .config import PlannerConfig
+from .interfaces import EvaluationProvider, ModelAdapter, TimelineDataset
+from .planner import RetrainingPlanner
+from .types import CandidateEvaluation, Decision, DecisionAction, PlanResult
+
+__version__ = version("retrainopt")
 
 __all__ = [
     "Decision",
+    "CandidateEvaluation",
     "DecisionAction",
+    "EvaluationProvider",
     "ModelAdapter",
     "PlannerConfig",
     "PlanResult",

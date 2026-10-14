@@ -513,7 +513,7 @@ class RetrainOptPlannerTests(unittest.TestCase):
             ],
             eval_blocks=[
                 [((0.0,), 0), ((1.0,), 1)],
-                [],
+                [((0.0,), 0), ((1.0,), 1)],
             ],
         )
         sample = timeline.sample_train_block(0, 10, seed=1)
@@ -580,7 +580,7 @@ class RetrainOptPlannerTests(unittest.TestCase):
         self.assertLessEqual(result.loss_cost, 1.0)
 
     def test_resolve_n_choices_supports_mixed_fraction_and_absolute_inputs(self):
-        config = PlannerConfig(n_choices=(0.0, 0.25, 0.5, 3, 99), min_train_size=2)
+        config = PlannerConfig(n_choices=(0.25, 0.5, 3, 99), min_train_size=2)
         self.assertEqual(config.resolve_n_choices(8), [2, 3, 4, 8])
 
     def test_unknown_bayes_backend_is_rejected(self):

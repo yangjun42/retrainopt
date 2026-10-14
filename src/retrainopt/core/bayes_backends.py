@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+import math
 from typing import Callable, Dict, Iterable, List, Sequence, Tuple
 
 from ..config import PlannerConfig
@@ -135,11 +136,15 @@ class LightweightBayesBackend(BaseBayesBackend):
 class _BoTorchRegressor:
     """Lazy-import BoTorch regressor wrapper."""
 
-    def __init__(self, rows: Sequence[Sequence[float]], targets: Sequence[float]):
+    def __init__(self, rows: Sequence[Sequence[float]], targets: Sequence[float], *, random_seed: int = 42):
         if len(rows) != len(targets):
             raise ValueError("BoTorch regressor rows/targets length mismatch.")
         if not rows:
             raise ValueError("BoTorch regressor requires at least one training row.")
+        if not rows[0] or any(len(row) != len(rows[0]) for row in rows):
+            raise ValueError("BoTorch feature rows must have the same positive dimension.")
+        if any(not math.isfinite(value) for row in rows for value in row) or any(not math.isfinite(value) for value in targets):
+            raise ValueError("BoTorch features and targets must be finite.")
 
         self._constant_value = None
         self._constant_std = 0.0
@@ -183,11 +188,13 @@ class _BoTorchRegressor:
             target_std = torch.tensor(1.0, dtype=torch.double)
         normalized_y = (train_y - target_mean) / target_std
 
-        model = SingleTaskGP(scaled_x, normalized_y)
-        mll = ExactMarginalLogLikelihood(model.likelihood, model)
-        fit_gpytorch_mll(mll)
-        model.eval()
-        model.likelihood.eval()
+        with torch.random.fork_rng(devices=[]):
+            torch.random.default_generator.manual_seed(random_seed)
+            model = SingleTaskGP(scaled_x, normalized_y)
+            mll = ExactMarginalLogLikelihood(model.likelihood, model)
+            fit_gpytorch_mll(mll)
+            model.eval()
+            model.likelihood.eval()
 
         self._model = model
         self._min_vals = min_vals
@@ -256,8 +263,8 @@ class BoTorchBayesBackend(BaseBayesBackend):
             raise RuntimeError("BoTorchBayesBackend requires observed evaluations before fitting.")
 
         return _BoTorchFittedSurrogate(
-            time_regressor=_BoTorchRegressor(time_rows, time_targets),
-            loss_regressor=_BoTorchRegressor(loss_rows, loss_targets),
+            time_regressor=_BoTorchRegressor(time_rows, time_targets, random_seed=config.random_seed),
+            loss_regressor=_BoTorchRegressor(loss_rows, loss_targets, random_seed=config.random_seed + 1),
             time_feature_fn=time_feature_fn,
             loss_feature_fn=loss_feature_fn,
         )

@@ -33,7 +33,16 @@ class NearestNeighborRegressor:
         self._neighbor_index = None
 
     def fit(self, rows: Iterable[Sequence[float]], targets: Iterable[float]) -> None:
-        self._rows = [(tuple(map(float, row)), float(target)) for row, target in zip(rows, targets)]
+        feature_rows = [tuple(map(float, row)) for row in rows]
+        target_values = [float(target) for target in targets]
+        if len(feature_rows) != len(target_values):
+            raise ValueError("Surrogate rows and targets must have the same length.")
+        if feature_rows and (not feature_rows[0] or any(len(row) != len(feature_rows[0]) for row in feature_rows)):
+            raise ValueError("Surrogate feature rows must have the same positive dimension.")
+        if any(not math.isfinite(value) for row in feature_rows for value in row) or any(not math.isfinite(value) for value in target_values):
+            raise ValueError("Surrogate features and targets must be finite.")
+        self._rows = list(zip(feature_rows, target_values))
+        self._matrix = self._targets = self._mins_array = self._ranges_array = self._scaled_matrix = self._neighbor_index = None
         if not self._rows:
             self._mins = ()
             self._ranges = ()
@@ -73,10 +82,10 @@ class NearestNeighborRegressor:
     def predict(self, row: Sequence[float]) -> Tuple[float, float]:
         if not self._rows:
             raise ValueError("NearestNeighborRegressor.predict() called before fit().")
-        if self._matrix is not None:
-            return self._predict_numpy(row)
-
         query = tuple(map(float, row))
+        self._validate_query(query)
+        if self._matrix is not None:
+            return self._predict_numpy(query)
         distances: List[Tuple[float, float]] = []
         exact_values: List[float] = []
         for stored_row, target in self._rows:
@@ -113,6 +122,8 @@ class NearestNeighborRegressor:
         if not self._rows:
             raise ValueError("NearestNeighborRegressor.predict_many() called before fit().")
         query_rows = [tuple(map(float, row)) for row in rows]
+        for row in query_rows:
+            self._validate_query(row)
         if not query_rows:
             return []
         if self._matrix is not None:
@@ -123,8 +134,7 @@ class NearestNeighborRegressor:
 
     def _predict_numpy(self, row: Sequence[float]) -> Tuple[float, float]:
         query = _np.asarray(tuple(map(float, row)), dtype=float)
-        scaled_query = (query - self._mins_array) / self._ranges_array
-        scaled = self._scaled_matrix - scaled_query
+        scaled = (self._matrix - query) / self._ranges_array
         distances = _np.sqrt(_np.sum(scaled * scaled, axis=1))
         exact_mask = distances <= 1e-12
         if bool(_np.any(exact_mask)):
@@ -138,11 +148,7 @@ class NearestNeighborRegressor:
         k_value = min(self.k_neighbors, int(distances.size))
         if k_value <= 0:
             raise ValueError("NearestNeighborRegressor.predict() called before fit().")
-        if k_value == int(distances.size):
-            nearest_idx = _np.argsort(distances)
-        else:
-            nearest_idx = _np.argpartition(distances, k_value - 1)[:k_value]
-            nearest_idx = nearest_idx[_np.argsort(distances[nearest_idx])]
+        nearest_idx = self._stable_nearest_indices(distances, k_value)
 
         nearest_distances = distances[nearest_idx]
         nearest_targets = self._targets[nearest_idx]
@@ -186,12 +192,7 @@ class NearestNeighborRegressor:
             non_exact_indices = _np.flatnonzero(~has_exact)
             if int(non_exact_indices.size) > 0:
                 non_exact_distances = distances[non_exact_indices]
-                if k_value == target_count:
-                    nearest_idx = _np.argsort(non_exact_distances, axis=1)[:, :k_value]
-                else:
-                    nearest_idx = _np.argpartition(non_exact_distances, k_value - 1, axis=1)[:, :k_value]
-                    order = _np.argsort(_np.take_along_axis(non_exact_distances, nearest_idx, axis=1), axis=1)
-                    nearest_idx = _np.take_along_axis(nearest_idx, order, axis=1)
+                nearest_idx = _np.asarray([self._stable_nearest_indices(values, k_value) for values in non_exact_distances])
 
                 nearest_distances = _np.take_along_axis(non_exact_distances, nearest_idx, axis=1)
                 nearest_targets = self._targets[nearest_idx]
@@ -214,54 +215,54 @@ class NearestNeighborRegressor:
         *,
         batch_size: int,
     ) -> List[Tuple[float, float]]:
+        # Ask for one extra neighbor to detect a tie at the selection boundary.
+        # Index implementations need not choose the earliest fitted row on ties.
         predictions: List[Tuple[float, float]] = []
-        target_count = int(self._targets.size)
+        target_count = len(self._rows)
         k_value = min(self.k_neighbors, target_count)
-        if k_value <= 0:
-            raise ValueError("NearestNeighborRegressor.predict_many() called before fit().")
-
         for start in range(0, len(rows), batch_size):
             query = _np.asarray(rows[start : start + batch_size], dtype=float)
             scaled_query = (query - self._mins_array) / self._ranges_array
-            nearest_distances, nearest_idx = self._neighbor_index.kneighbors(
-                scaled_query,
-                n_neighbors=k_value,
-                return_distance=True,
+            index_distances, index_ids = self._neighbor_index.kneighbors(
+                scaled_query, n_neighbors=min(k_value + 1, target_count), return_distance=True,
             )
-            exact_rows = _np.flatnonzero(nearest_distances[:, 0] <= 1e-12)
-            batch_predictions: List[Tuple[float, float] | None] = [None] * int(query.shape[0])
-
-            for row_index in exact_rows:
-                exact_idx = self._neighbor_index.radius_neighbors(
-                    scaled_query[int(row_index) : int(row_index) + 1],
-                    radius=1e-12,
-                    return_distance=False,
-                )[0]
-                exact_values = self._targets[exact_idx]
-                mean = float(_np.mean(exact_values))
-                if int(exact_values.size) == 1:
-                    batch_predictions[int(row_index)] = (mean, 0.0)
+            for row, distances, indices in zip(query, index_distances, index_ids):
+                boundary_tie = k_value < target_count and _np.isclose(
+                    distances[k_value - 1], distances[k_value], rtol=1e-12, atol=1e-12,
+                )
+                if distances[0] <= 1e-12 or boundary_tie:
+                    predictions.append(self._predict_numpy(row))
                     continue
-                variance = float(_np.mean((exact_values - mean) ** 2))
-                batch_predictions[int(row_index)] = (mean, math.sqrt(max(0.0, variance)))
-
-            non_exact_indices = _np.flatnonzero(nearest_distances[:, 0] > 1e-12)
-            if int(non_exact_indices.size) > 0:
-                non_exact_distances = nearest_distances[non_exact_indices]
-                non_exact_idx = nearest_idx[non_exact_indices]
-                nearest_targets = self._targets[non_exact_idx]
-                weights = 1.0 / (non_exact_distances + 1e-6)
-                weight_sum = _np.sum(weights, axis=1)
-                means = _np.sum(weights * nearest_targets, axis=1) / weight_sum
-                variances = _np.sum(weights * ((nearest_targets - means[:, None]) ** 2), axis=1) / weight_sum
-                distance_scales = _np.mean(non_exact_distances, axis=1)
-                stds = _np.sqrt(_np.maximum(0.0, variances)) + self.uncertainty_floor * distance_scales
-
-                for offset, row_index in enumerate(non_exact_indices):
-                    batch_predictions[int(row_index)] = (float(means[offset]), float(stds[offset]))
-
-            predictions.extend(prediction for prediction in batch_predictions if prediction is not None)
+                indices = indices[:k_value]
+                differences = (self._matrix[indices] - row) / self._ranges_array
+                distances = _np.sqrt(_np.sum(differences * differences, axis=1))
+                if bool(_np.any(distances <= 1e-12)):
+                    predictions.append(self._predict_numpy(row))
+                    continue
+                order = _np.lexsort((indices, distances))
+                distances, indices = distances[order], indices[order]
+                values = self._targets[indices]
+                weights = 1.0 / (distances + 1e-6)
+                mean = float(_np.sum(weights * values) / _np.sum(weights))
+                variance = float(_np.sum(weights * ((values - mean) ** 2)) / _np.sum(weights))
+                std = math.sqrt(max(0.0, variance)) + self.uncertainty_floor * float(_np.mean(distances))
+                predictions.append((mean, std))
         return predictions
+
+    @staticmethod
+    def _stable_nearest_indices(distances, k_value):
+        """Choose ties by fitted-row order without sorting every training row."""
+        if k_value == len(distances):
+            return _np.argsort(distances, kind="stable")
+        cutoff = _np.partition(distances, k_value - 1)[k_value - 1]
+        closer = _np.flatnonzero(distances < cutoff)
+        tied = _np.flatnonzero(distances == cutoff)[: k_value - len(closer)]
+        selected = _np.concatenate((closer, tied))
+        return selected[_np.lexsort((selected, distances[selected]))]
+
+    def _validate_query(self, row: Sequence[float]) -> None:
+        if len(row) != len(self._mins) or any(not math.isfinite(value) for value in row):
+            raise ValueError("Surrogate query must be finite and match the fitted feature dimension.")
 
     def _distance(self, left: Sequence[float], right: Sequence[float]) -> float:
         total = 0.0
