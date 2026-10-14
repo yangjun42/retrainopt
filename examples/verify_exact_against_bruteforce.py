@@ -1,131 +1,85 @@
-"""Verify that RetrainOpt exact planning matches brute-force search."""
+"""Verify exact DP against exhaustive schedules through public evaluator injection.
+
+All costs are fixed. This example is independent of model fitting and timing.
+"""
 
 from __future__ import annotations
 
-from retrainopt import PlannerConfig, RetrainingPlanner
-from retrainopt.adapters import ArrayTimelineAdapter
-from retrainopt.core.costs import compute_step_cost
-from retrainopt.interfaces import ModelAdapter
+from itertools import product
+
+from retrainopt import CandidateEvaluation, PlannerConfig, RetrainingPlanner
+from retrainopt.adapters import ArrayTimelineAdapter, PrototypeModelAdapter
 
 
-class PrototypeClassifierAdapter(ModelAdapter):
-    """Tiny dependency-free classifier for correctness verification."""
+class TableEvaluator:
+    """Minimal EvaluationProvider backed by a measured cost table."""
 
-    def fit(self, train_data, *, step, n_samples, random_seed):
-        if not train_data:
-            return {"prototypes": {}, "majority": 0}
-
-        grouped = {}
-        counts = {}
-        for features, label in train_data:
-            grouped.setdefault(int(label), []).append(float(features[0]))
-            counts[int(label)] = counts.get(int(label), 0) + 1
-
-        prototypes = {
-            label: sum(values) / len(values)
-            for label, values in grouped.items()
-        }
-        majority = max(counts.items(), key=lambda item: item[1])[0]
-        return {"prototypes": prototypes, "majority": majority}
-
-    def evaluate(self, model, eval_data, *, step):
-        if not eval_data:
-            return 0.0
-
-        mistakes = 0
-        prototypes = model["prototypes"]
-        majority = model["majority"]
-        for features, label in eval_data:
-            feature_value = float(features[0])
-            if prototypes:
-                predicted = min(
-                    prototypes.items(),
-                    key=lambda item: abs(item[1] - feature_value),
-                )[0]
-            else:
-                predicted = majority
-            if int(predicted) != int(label):
-                mistakes += 1
-        return mistakes / len(eval_data)
-
-
-def brute_force_cost(state_costs, num_steps, loss_weight, initial_model_id=(-1, 0)):
-    best_cost = float("inf")
-
-    choices_by_step = {}
-    for model_id in state_costs:
-        if model_id == initial_model_id:
-            continue
-        choices_by_step.setdefault(model_id[0], []).append(model_id[1])
-
-    def recurse(step, current_model_id, running_cost):
-        nonlocal best_cost
-        if step == num_steps:
-            best_cost = min(best_cost, running_cost)
-            return
-
-        keep_loss = state_costs[current_model_id]["future_losses"].get(step, float("inf"))
-        recurse(
-            step + 1,
-            current_model_id,
-            running_cost + compute_step_cost(0.0, keep_loss, loss_weight),
+    def __init__(self) -> None:
+        self.initial = CandidateEvaluation(
+            model_id=(-1, 0), dataset_size=0,
+            training_seconds=0.0, training_cost=0.0,
+            future_losses={0: 0.8, 1: 0.9, 2: 1.0},
         )
+        self.table = {}
+        for step in range(3):
+            for n_samples in (2, 4):
+                cost = 0.1 * n_samples
+                self.table[(step, n_samples)] = CandidateEvaluation(
+                    model_id=(step, n_samples), dataset_size=4,
+                    training_seconds=cost, training_cost=cost,
+                    future_losses={
+                        t: 0.4 / n_samples + 0.2 * (t - step)
+                        for t in range(step, 3)
+                    },
+                )
+        self.observed = {}
 
-        for n_value in choices_by_step.get(step, []):
-            model_id = (step, n_value)
-            info = state_costs[model_id]
-            retrain_cost = info["training_cost"]
-            loss_value = info["future_losses"].get(step, float("inf"))
-            recurse(
-                step + 1,
-                model_id,
-                running_cost + compute_step_cost(retrain_cost, loss_value, loss_weight),
-            )
+    def evaluate_initial_model(self, initial_model=None):
+        if initial_model is not None:
+            raise ValueError("This fixed-table example does not accept a model artifact.")
+        return self.initial
 
-    recurse(0, initial_model_id, 0.0)
-    return best_cost
+    def evaluate_candidate(self, step, n_samples):
+        record = self.table[(step, n_samples)]
+        self.observed[record.model_id] = record
+        return record
+
+    def evaluate_candidate_uncached(self, step, n_samples):
+        return self.table[(step, n_samples)]
+
+    def iter_cached_candidates(self):
+        return tuple(self.observed.values())
+
+
+def brute_force_cost(evaluator, loss_weight):
+    """Enumerate all 3**3 schedules without calling a planner or DP helper."""
+    optimum = float("inf")
+    for actions in product((None, 2, 4), repeat=3):
+        current = evaluator.initial
+        total = 0.0
+        for step, n_samples in enumerate(actions):
+            if n_samples is not None:
+                current = evaluator.table[(step, n_samples)]
+                total += current.training_cost
+            total += loss_weight * current.future_losses[step]
+        optimum = min(optimum, total)
+    return optimum
 
 
 def main() -> None:
-    timeline = ArrayTimelineAdapter(
-        train_blocks=[
-            [((0.0,), 0), ((0.2,), 0), ((0.8,), 1), ((1.0,), 1)],
-            [((0.1,), 0), ((0.3,), 0), ((0.7,), 1), ((0.9,), 1)],
-            [((0.0,), 1), ((0.2,), 1), ((0.8,), 0), ((1.0,), 0)],
-        ],
-        eval_blocks=[
-            [((0.05,), 0), ((0.95,), 1)],
-            [((0.15,), 0), ((0.85,), 1)],
-            [((0.05,), 1), ((0.95,), 0)],
-        ],
+    block = [((0.0,), 0), ((0.2,), 0), ((0.8,), 1), ((1.0,), 1)]
+    timeline = ArrayTimelineAdapter([block] * 3, [block] * 3)
+    evaluator = TableEvaluator()
+    config = PlannerConfig(n_choices=(2, 4), loss_cost_weight=2.0)
+    planner = RetrainingPlanner(
+        timeline, PrototypeModelAdapter(), config, evaluator=evaluator,
     )
-
-    config = PlannerConfig(
-        n_choices=(0.5, 1.0),
-        min_train_size=1,
-        time_cost_weight=0.0,
-        loss_cost_weight=1.0,
-        random_seed=7,
-    )
-    planner = RetrainingPlanner(timeline, PrototypeClassifierAdapter(), config=config)
-    result = planner.plan(method="exact")
-    state_costs = planner._build_exact_state_costs()
-    brute_force = brute_force_cost(
-        state_costs=state_costs,
-        num_steps=timeline.num_steps,
-        loss_weight=config.loss_cost_weight,
-    )
-
-    print("Exact result")
-    print(result.to_dict())
-    print()
-    print(f"Brute-force optimum: {brute_force:.6f}")
-
-    if abs(result.total_cost - brute_force) > 1e-9:
-        raise SystemExit(
-            f"Verification failed: exact={result.total_cost:.12f}, brute_force={brute_force:.12f}"
-        )
-
+    result = planner.plan("exact")
+    optimum = brute_force_cost(evaluator, config.loss_cost_weight)
+    if abs(result.total_cost - optimum) > 1e-12:
+        raise AssertionError(f"exact={result.total_cost}; exhaustive={optimum}")
+    print(f"Exact cost: {result.total_cost:.6f}")
+    print(f"Brute-force optimum: {optimum:.6f}")
     print("VERIFIED: exact planner matches brute-force optimum")
 
 

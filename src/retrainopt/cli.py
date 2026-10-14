@@ -4,11 +4,29 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
+import re
 from typing import List
 
 from .adapters import BinaryTimelineAdapter, PrototypeModelAdapter, SklearnModelAdapter
 from .config import PlannerConfig
 from .planner import RetrainingPlanner
+
+
+def _parse_n_choice(value: str) -> int | float:
+    """Preserve integer-count versus decimal-fraction command-line intent."""
+    try:
+        if re.fullmatch(r"[+-]?\d+", value):
+            count = int(value)
+            if count >= 1:
+                return count
+        else:
+            fraction = float(value)
+            if math.isfinite(fraction) and 0 < fraction <= 1:
+                return fraction
+    except ValueError:
+        pass
+    raise argparse.ArgumentTypeError("Use a positive integer sample count (1) or a decimal fraction in (0, 1] (1.0 means all samples).")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -41,9 +59,9 @@ def build_parser() -> argparse.ArgumentParser:
         "--n-choice",
         dest="n_choices",
         action="append",
-        type=float,
+        type=_parse_n_choice,
         default=None,
-        help="Repeat to provide fractions or absolute sample counts.",
+        help="Repeat for integer sample counts or decimal fractions in (0, 1]; 1 means one sample, 1.0 means all.",
     )
     plan_parser.add_argument("--min-train-size", type=int, default=1)
     plan_parser.add_argument("--random-seed", type=int, default=42)
@@ -74,7 +92,7 @@ def main(argv: List[str] | None = None) -> int:
     result = planner.plan(method=args.method)
 
     if args.json:
-        print(json.dumps(result.to_dict(), indent=2))
+        print(json.dumps(result.to_dict(), indent=2, allow_nan=False))
     else:
         print(f"RetrainOpt method={result.method} total_cost={result.total_cost:.6f}")
         for step, decision in enumerate(result.decisions):

@@ -1,49 +1,101 @@
 name: Publish
-
 on:
-  workflow_dispatch:
   push:
-    tags:
-      - "v*"
-
+    tags: ['v*']
+permissions:
+  contents: read
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: false
 jobs:
-  build:
+  release-ref:
     runs-on: ubuntu-latest
-
+    outputs:
+      version: ${{ steps.ref.outputs.version }}
+      environment: ${{ steps.ref.outputs.environment }}
+      index: ${{ steps.ref.outputs.index }}
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v4
         with:
-          python-version: "3.13"
-
-      - name: Build distributions
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - id: ref
+        name: Require exact version tags and final releases on main
         run: |
-          python -m pip install --upgrade pip build
-          python -m build
-
-      - name: Upload distributions as artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: dist
-          path: dist/*
-
-  publish-pypi:
+          python - <<'PY'
+          import os, re, subprocess, tomllib
+          from pathlib import Path
+          version = tomllib.loads(Path('pyproject.toml').read_text())['project']['version']
+          assert re.fullmatch(r'\d+\.\d+\.\d+(rc\d+)?', version), version
+          assert os.environ['GITHUB_REF_NAME'] == 'v' + version
+          candidate = 'rc' in version
+          if not candidate:
+              subprocess.run(['git', 'merge-base', '--is-ancestor', os.environ['GITHUB_SHA'], 'origin/main'], check=True)
+          target = 'testpypi' if candidate else 'pypi'
+          index = 'https://test.pypi.org/legacy/' if candidate else 'https://upload.pypi.org/legacy/'
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write(f'version={version}\nenvironment={target}\nindex={index}\n')
+          PY
+  validate:
+    needs: release-ref
+    uses: ./.github/workflows/validation.yml
+  publish:
+    needs: [release-ref, validate]
     runs-on: ubuntu-latest
-    needs: build
-    environment: pypi
-    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
-
+    environment: ${{ needs.release-ref.outputs.environment }}
+    permissions:
+      id-token: write
     steps:
-      - name: Download built distributions
-        uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v4
         with:
-          name: dist
-          path: dist
-
-      - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
+          name: distributions
+      - run: sha256sum -c SHA256SUMS
+      - uses: pypa/gh-action-pypi-publish@release/v1
         with:
-          password: ${{ secrets.PYPI_API_TOKEN }}
+          repository-url: ${{ needs.release-ref.outputs.index }}
+  verify-index:
+    needs: [release-ref, publish]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: distributions
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: '0.13.1'
+          python-version: '3.13'
+      - name: Verify anonymous installation from the target index
+        env:
+          RELEASE_VERSION: ${{ needs.release-ref.outputs.version }}
+          TARGET: ${{ needs.release-ref.outputs.environment }}
+        run: |
+          uv venv "$RUNNER_TEMP/public-install"
+          if [ "$TARGET" = testpypi ]; then index=https://test.pypi.org/simple/; else index=https://pypi.org/simple/; fi
+          for attempt in 1 2 3 4 5 6; do
+            uv pip install --no-cache --no-deps --python "$RUNNER_TEMP/public-install/bin/python" --index-url "$index" "retrainopt==$RELEASE_VERSION" && break
+            if [ "$attempt" = 6 ]; then exit 1; fi
+            sleep 10
+          done
+          "$RUNNER_TEMP/public-install/bin/python" scripts/verify_index.py --version "$RELEASE_VERSION" --target "$TARGET"
+          cd "$RUNNER_TEMP"
+          "$RUNNER_TEMP/public-install/bin/python" "$GITHUB_WORKSPACE/scripts/installed_smoke.py" --expected-version "$RELEASE_VERSION"
+  github-release:
+    needs: [release-ref, verify-index]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: distributions
+      - name: Publish verified artifacts and checksums
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.release-ref.outputs.version }}
+          TARGET: ${{ needs.release-ref.outputs.environment }}
+        run: |
+          extra=()
+          if [ "$TARGET" = testpypi ]; then extra+=(--prerelease); fi
+          gh release create "v$VERSION" --repo "$GITHUB_REPOSITORY" --verify-tag --generate-notes "${extra[@]}" dist/* SHA256SUMS

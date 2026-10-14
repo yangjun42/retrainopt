@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import random
 from abc import ABC, abstractmethod
-from typing import Any, Sequence
+from typing import Any, Iterable, Protocol, Sequence, runtime_checkable
+
+from .types import CandidateEvaluation
 
 
 class TimelineDataset(ABC):
@@ -56,4 +58,22 @@ class ModelAdapter(ABC):
     @abstractmethod
     def evaluate(self, model: Any, eval_data: Any, *, step: int) -> float:
         """Evaluate a model artifact and return a scalar loss."""
+
+
+@runtime_checkable
+class EvaluationProvider(Protocol):
+    """Cost evaluation seam for custom measurement or persistent caching.
+
+    Returned costs use the planner's frozen configuration and immutable
+    timeline. Candidate ids and complete finite losses must describe that
+    same snapshot. Diagnostic evaluation must not add observed candidates.
+    """
+
+    def evaluate_initial_model(self, initial_model: Any | None = None) -> CandidateEvaluation: ...
+
+    def evaluate_candidate(self, step: int, n_samples: int) -> CandidateEvaluation: ...
+
+    def evaluate_candidate_uncached(self, step: int, n_samples: int) -> CandidateEvaluation: ...
+
+    def iter_cached_candidates(self) -> Iterable[CandidateEvaluation]: ...
 

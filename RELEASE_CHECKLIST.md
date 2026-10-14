@@ -1,23 +1,40 @@
-# Release Checklist
+# Release checklist
 
-## Before First Publish
+## Source and behavior
 
-- Fill in the copyright owner/year in `LICENSE` if you want the appendix boilerplate customized
-- Confirm the PyPI name `retrainopt` one more time right before first upload
-- Decide whether to keep version `0.1.0` or start from another initial version
-- Decide whether you want `pip install retrainopt[botorch]` documented as experimental or fully supported
-- Add the `PYPI_API_TOKEN` GitHub Actions secret if you want to use the bundled publish workflow
+- [ ] Release changes reviewed; working tree and tag identify the intended revision.
+- [ ] Package version, citation version and tag agree.
+- [ ] Changelog and migration notes describe acquisition and initial-model changes.
+- [ ] Exact DP passes independent exhaustive checks on small fixtures.
+- [ ] Whole-stage acquisition, weighted variance, observed entries and zero-variance EI/PI pass regression checks.
+- [ ] Evaluator, configuration, data and cost contracts pass tests.
+- [ ] Paper reproduction tag/pin and frozen artifacts remain unchanged.
 
-## Recommended Repo Setup
+## Distribution and documentation
 
-- Initialize a fresh git repository in this directory
-- Create a clean virtual environment
-- Run `pip install -e .`
-- Run `python -m unittest tests.test_retrainopt_planner tests.test_retrainopt_smoke`
+- [ ] Locked test/build/docs groups resolve and validate.
+- [ ] Minimal example and optional sklearn/Torch/BoTorch examples pass.
+- [ ] Sphinx HTML and doctests build without warnings.
+- [ ] Wheel and sdist build, metadata checks pass, and checksums are recorded.
+- [ ] Wheel and sdist-derived installations run outside the source checkout.
+- [ ] Public API, assumptions, cost accounting and limitations are documented.
 
-## Optional But Useful
+## External configuration
 
-- Tune the bundled GitHub Actions workflows for your repository conventions
-- Add project URLs and author metadata to `pyproject.toml`
-- Add a changelog
-- Add a couple of benchmark or real-dataset examples
+- [ ] TestPyPI Trusted Publisher matches `publish.yml` and `testpypi`.
+- [ ] PyPI Trusted Publisher matches `publish.yml` and `pypi`.
+- [ ] GitHub environments and protection rules are configured.
+- [ ] GitHub Pages uses Actions and its deployment environment is ready.
+
+## Publication
+
+- [ ] Candidate tag exactly matches the `rc` package version.
+- [ ] Tagged validation and TestPyPI upload succeed.
+- [ ] Anonymous TestPyPI install succeeds; GitHub prerelease contains verified artifacts/checksums.
+- [ ] Final version is reviewed on `main`; stable tag matches package version.
+- [ ] PyPI upload and anonymous PyPI installation succeed.
+- [ ] GitHub release contains verified artifacts/checksums and links to migration notes.
+- [ ] Documentation deployment succeeds and shows the intended release.
+
+Unchecked publisher/index/deployment steps mean publication is pending, even
+when local validation is complete. See [PUBLISHING.md](PUBLISHING.md).

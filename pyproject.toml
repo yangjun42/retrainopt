@@ -1,10 +1,10 @@
 [build-system]
-requires = ["setuptools>=77", "wheel"]
+requires = ["setuptools>=77", "wheel>=0.45.1"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "retrainopt"
-version = "0.1.0"
+version = "0.2.0"
 description = "RetrainOpt - Cost-aware retraining planning"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -26,28 +26,27 @@ classifiers = [
 
 [project.optional-dependencies]
 sklearn = [
-    "scikit-learn",
+    "scikit-learn>=1.4.2",
 ]
 torch = [
-    "torch",
-    "torchvision",
+    "torch>=2.4",
 ]
 botorch = [
     "botorch>=0.16.1",
     "gpytorch",
-    "torch",
-    "torchvision",
+    "torch>=2.4",
 ]
-dev = [
-    "pytest",
-    "black",
-    "jupyter",
-]
+
+[dependency-groups]
+test = ["pytest>=8"]
+build = ["build>=1.2", "twine>=6", "setuptools>=77", "wheel>=0.45.1"]
+docs = ["sphinx>=8", "myst-parser>=4", "furo>=2024.8.6"]
 
 [project.urls]
 Homepage = "https://github.com/yangjun42/retrainopt"
 Repository = "https://github.com/yangjun42/retrainopt"
 Issues = "https://github.com/yangjun42/retrainopt/issues"
+Documentation = "https://yangjun42.github.io/retrainopt/"
 
 [project.scripts]
 retrainopt = "retrainopt.cli:main"
@@ -59,5 +58,20 @@ package-dir = {"" = "src"}
 where = ["src"]
 include = ["retrainopt*"]
 
+[tool.setuptools.package-data]
+retrainopt = ["py.typed"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+# Reproducible CPU development/CI. Published extras remain accelerator-neutral.
+[tool.uv]
+required-environments = ["sys_platform == 'linux' and platform_machine == 'x86_64'"]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]

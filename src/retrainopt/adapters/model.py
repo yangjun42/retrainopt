@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import copy
+from numbers import Integral
 from typing import Any, Callable, Iterable, List, Sequence, Tuple
 
 from ..interfaces import ModelAdapter
@@ -27,6 +27,14 @@ class SklearnModelAdapter(ModelAdapter):
 
     def fit(self, train_data: Any, *, step: int, n_samples: int, random_seed: int) -> Any:
         estimator = self._build_estimator()
+        if hasattr(estimator, "get_params"):
+            seed_params = {
+                name: int(random_seed) % (2 ** 32)
+                for name, value in estimator.get_params(deep=True).items()
+                if (name == "random_state" or name.endswith("__random_state")) and value is None
+            }
+            if seed_params:
+                estimator.set_params(**seed_params)
         features, labels = _split_labeled_block(train_data)
         estimator.fit(features, labels)
         return estimator
@@ -39,7 +47,7 @@ class SklearnModelAdapter(ModelAdapter):
 
         features, labels = _split_labeled_block(eval_data)
         if not features:
-            return float("inf")
+            raise ValueError("Evaluation data must not be empty.")
         if hasattr(model, "predict_proba"):
             probabilities = model.predict_proba(features)
             return float(log_loss(labels, probabilities, labels=list(model.classes_)))
@@ -55,10 +63,7 @@ class SklearnModelAdapter(ModelAdapter):
 
         if callable(self.model_factory):
             return self.model_factory()
-        try:
-            return clone(self.model_factory)
-        except Exception:
-            return copy.deepcopy(self.model_factory)
+        return clone(self.model_factory)
 
 
 class PrototypeModelAdapter(ModelAdapter):
@@ -88,7 +93,7 @@ class PrototypeModelAdapter(ModelAdapter):
 
     def evaluate(self, model: Any, eval_data: Any, *, step: int) -> float:
         if not eval_data:
-            return 0.0
+            raise ValueError("Evaluation data must not be empty.")
 
         mistakes = 0
         prototypes = model.get("prototypes", {})
@@ -131,8 +136,11 @@ class TorchModelAdapter(ModelAdapter):
     ):
         self.model_factory = model_factory
         self.optimizer_factory = optimizer_factory
-        self.epochs = max(1, int(epochs))
-        self.batch_size = max(1, int(batch_size))
+        for name, value in (("epochs", epochs), ("batch_size", batch_size)):
+            if isinstance(value, bool) or not isinstance(value, Integral) or value < 1:
+                raise ValueError(f"{name} must be a positive integer.")
+        self.epochs = int(epochs)
+        self.batch_size = int(batch_size)
         self.device = device
 
     def fit(self, train_data: Any, *, step: int, n_samples: int, random_seed: int) -> Any:
@@ -142,26 +150,42 @@ class TorchModelAdapter(ModelAdapter):
         except ImportError as exc:  # pragma: no cover - optional dependency
             raise RuntimeError("TorchModelAdapter requires the `torch` extra.") from exc
 
-        torch.manual_seed(random_seed)
-        model = self.model_factory().to(self.device)
-        optimizer = (
-            self.optimizer_factory(model.parameters())
-            if self.optimizer_factory is not None
-            else torch.optim.Adam(model.parameters(), lr=1e-3)
-        )
-        criterion = torch.nn.CrossEntropyLoss()
-        train_loader = DataLoader(train_data, batch_size=self.batch_size, shuffle=True)
+        device = torch.device(self.device)
+        device_type = device.type if device.type in {"cuda", "mps"} else "cuda"
+        devices = []
+        if device.type in {"cuda", "mps"}:
+            devices = [device.index or 0]
+        with torch.random.fork_rng(devices=devices, device_type=device_type):
+            torch.random.default_generator.manual_seed(random_seed)
+            if device.type == "cuda":
+                with torch.cuda.device(devices[0]):
+                    torch.cuda.manual_seed(random_seed)
+            elif device.type == "mps":
+                torch.mps.manual_seed(random_seed)
+            model = self.model_factory().to(self.device)
+            optimizer = (
+                self.optimizer_factory(model.parameters())
+                if self.optimizer_factory is not None
+                else torch.optim.Adam(model.parameters(), lr=1e-3)
+            )
+            criterion = torch.nn.CrossEntropyLoss()
+            generator = torch.Generator().manual_seed(random_seed)
+            train_loader = DataLoader(train_data, batch_size=self.batch_size, shuffle=True, generator=generator)
 
-        model.train()
-        for _ in range(self.epochs):
-            for inputs, targets in train_loader:
-                inputs = inputs.to(self.device)
-                targets = targets.to(self.device)
-                optimizer.zero_grad()
-                outputs = model(inputs)
-                loss = criterion(outputs, targets)
-                loss.backward()
-                optimizer.step()
+            model.train()
+            for _ in range(self.epochs):
+                for inputs, targets in train_loader:
+                    inputs = inputs.to(self.device)
+                    targets = targets.to(self.device)
+                    optimizer.zero_grad()
+                    outputs = model(inputs)
+                    loss = criterion(outputs, targets)
+                    loss.backward()
+                    optimizer.step()
+            if device.type == "cuda":
+                torch.cuda.synchronize(device)
+            elif device.type == "mps":
+                torch.mps.synchronize()
 
         return model
 
@@ -172,7 +196,7 @@ class TorchModelAdapter(ModelAdapter):
         except ImportError as exc:  # pragma: no cover - optional dependency
             raise RuntimeError("TorchModelAdapter requires the `torch` extra.") from exc
 
-        loader = DataLoader(eval_data, batch_size=self.batch_size, shuffle=False)
+        loader = DataLoader(eval_data, batch_size=self.batch_size, shuffle=False, generator=torch.Generator().manual_seed(0))
         criterion = torch.nn.CrossEntropyLoss()
         model.eval()
         total_loss = 0.0
@@ -188,5 +212,5 @@ class TorchModelAdapter(ModelAdapter):
                 total_count += int(inputs.size(0))
 
         if total_count <= 0:
-            return float("inf")
+            raise ValueError("Evaluation data must not be empty.")
         return total_loss / total_count

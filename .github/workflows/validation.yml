@@ -1,0 +1,136 @@
+name: Validation
+on:
+  workflow_call:
+permissions:
+  contents: read
+jobs:
+  core:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+        python: ['3.10', '3.11', '3.12', '3.13']
+        include:
+          - os: macos-latest
+            python: '3.13'
+          - os: windows-latest
+            python: '3.13'
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: '0.13.1'
+          python-version: ${{ matrix.python }}
+      - run: uv sync --locked --group test
+      - run: uv run --no-sync python -m pytest -q
+      - run: uv run --no-sync python examples/minimal_array_timeline.py
+      - run: uv run --no-sync retrainopt --help
+  optional-backends:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.10', '3.11', '3.12', '3.13']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: '0.13.1'
+          python-version: ${{ matrix.python }}
+      - run: uv sync --locked --all-extras --group test
+      - name: Require every optional backend before tests
+        run: uv run --no-sync python -c "import sklearn, torch, botorch, gpytorch"
+      - run: uv run --no-sync python -m pytest -q
+      - run: uv run --no-sync python examples/sklearn_timeline.py
+      - run: uv run --no-sync python examples/torch_timeline.py
+      - run: uv run --no-sync python examples/botorch_timeline.py
+  minimum-direct-dependencies:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: '0.13.1'
+          python-version: '3.10'
+      - name: Resolve the lowest compatible direct dependencies in this disposable checkout
+        run: uv sync --resolution lowest-direct --upgrade --all-extras --group test
+      - name: Require and report every optional backend before tests
+        run: |
+          uv run --no-sync python - <<'PY'
+          import importlib.metadata
+          import sklearn, torch, botorch, gpytorch
+          for package in ('scikit-learn', 'torch', 'botorch', 'gpytorch', 'numpy'):
+              print(f'{package}=={importlib.metadata.version(package)}')
+          PY
+      - run: uv run --no-sync python -m pytest -q
+      - run: uv run --no-sync python examples/sklearn_timeline.py
+      - run: uv run --no-sync python examples/torch_timeline.py
+      - run: uv run --no-sync python examples/botorch_timeline.py
+  docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: '0.13.1'
+          python-version: '3.13'
+      - run: uv sync --locked --group docs
+      - run: uv run --no-sync sphinx-build -W --keep-going -b html docs _build/html
+      - run: uv run --no-sync sphinx-build -W --keep-going -b doctest docs _build/doctest
+      - uses: actions/upload-artifact@v4
+        with:
+          name: documentation
+          path: _build/html
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: '0.13.1'
+          python-version: '3.13'
+      - run: uv sync --locked --group build
+      - name: Build wheel from the source distribution with locked tools
+        run: |
+          export SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)
+          uv run --no-sync python scripts/build_release.py
+          uv run --no-sync python scripts/build_release.py --outdir "$RUNNER_TEMP/rebuild"
+          cmp dist/*.whl "$RUNNER_TEMP"/rebuild/*.whl
+          cmp dist/*.tar.gz "$RUNNER_TEMP"/rebuild/*.tar.gz
+          uv run --no-sync twine check --strict dist/*
+          sha256sum dist/* > SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: distributions
+          path: |
+            dist/*
+            SHA256SUMS
+            scripts/installed_smoke.py
+            scripts/verify_index.py
+  installed-package:
+    needs: build
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        format: [wheel, sdist]
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: distributions
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: '0.13.1'
+          python-version: '3.13'
+      - name: Verify and install without a source checkout
+        env:
+          FORMAT: ${{ matrix.format }}
+        run: |
+          sha256sum -c SHA256SUMS
+          uv venv "$RUNNER_TEMP/installed"
+          if [ "$FORMAT" = wheel ]; then package=(dist/*.whl); else package=(dist/*.tar.gz); fi
+          uv pip install --python "$RUNNER_TEMP/installed/bin/python" "${package[0]}"
+          cd "$RUNNER_TEMP"
+          "$RUNNER_TEMP/installed/bin/python" "$GITHUB_WORKSPACE/scripts/installed_smoke.py"

@@ -16,8 +16,10 @@ from retrainopt import PlannerConfig, RetrainingPlanner
 from retrainopt.adapters import ArrayTimelineAdapter, PrototypeModelAdapter
 from retrainopt.core.costs import compute_step_cost
 from retrainopt.core.dp import evaluate_decision_sequence, solve_exact_schedule
+from retrainopt.core.surrogate import NearestNeighborRegressor
+import retrainopt.core.surrogate as surrogate_module
 from retrainopt.interfaces import ModelAdapter
-from retrainopt.types import DecisionAction
+from retrainopt.types import CandidateEvaluation, Decision, DecisionAction
 
 
 class PrototypeClassifierAdapter(ModelAdapter):
@@ -60,6 +62,89 @@ class PrototypeClassifierAdapter(ModelAdapter):
             if int(predicted) != int(label):
                 mistakes += 1
         return mistakes / len(eval_data)
+
+
+class _TinyTimeline:
+    def __init__(self, num_steps=4):
+        self.num_steps = num_steps
+
+    def train_size(self, step):
+        return 10
+
+    def sample_train_block(self, step, n_samples, seed):
+        return [((float(step),), 0)] * int(n_samples)
+
+    def get_eval_block(self, step):
+        return [((float(step),), 0)]
+
+
+class _NoopAdapter(ModelAdapter):
+    def fit(self, train_data, *, step, n_samples, random_seed):
+        return {"step": step, "n_samples": n_samples}
+
+    def evaluate(self, model, eval_data, *, step):
+        return 0.0
+
+
+class _StaticSurrogate:
+    def __init__(self, state_costs):
+        self.state_costs = state_costs
+
+    def predict_training_cost(self, step, n_value, dataset_size):
+        return float(self.state_costs[(step, n_value)]["training_cost"]), 0.0
+
+    def predict_loss(self, step, n_value, dataset_size, eval_step):
+        return float(self.state_costs[(step, n_value)]["future_losses"].get(eval_step, 999.0)), 0.0
+
+
+class _BatchLossOnlySurrogate:
+    def __init__(self):
+        self.loss_batch_calls = []
+
+    def predict_training_cost(self, step, n_value, dataset_size):
+        return 1.0, 0.0
+
+    def predict_loss(self, step, n_value, dataset_size, eval_step):
+        raise AssertionError("planner should use batched loss prediction when available")
+
+    def predict_losses(self, step, n_value, dataset_size, eval_steps):
+        steps = list(eval_steps)
+        self.loss_batch_calls.append((step, n_value, dataset_size, steps))
+        return [(0.1 + 0.01 * eval_step, 0.001) for eval_step in steps]
+
+
+class _StaticEvaluationEngine:
+    def __init__(self, state_costs):
+        self.state_costs = state_costs
+        self._candidate_cache = {}
+        self.evaluate_candidate_calls = []
+
+    def evaluate_initial_model(self, initial_model=None):
+        return self._evaluation((-1, 0), observed=True)
+
+    def evaluate_candidate(self, step, n_samples):
+        model_id = (int(step), int(n_samples))
+        if model_id not in self._candidate_cache:
+            self.evaluate_candidate_calls.append(model_id)
+            self._candidate_cache[model_id] = self._evaluation(model_id, observed=True)
+        return self._candidate_cache[model_id]
+
+    def evaluate_candidate_uncached(self, step, n_samples):
+        return self._evaluation((int(step), int(n_samples)), observed=True)
+
+    def iter_cached_candidates(self):
+        return self._candidate_cache.values()
+
+    def _evaluation(self, model_id, *, observed):
+        info = self.state_costs[model_id]
+        return CandidateEvaluation(
+            model_id=model_id,
+            dataset_size=10,
+            training_seconds=float(info.get("training_cost", 0.0)),
+            training_cost=float(info.get("training_cost", 0.0)),
+            future_losses=dict(info["future_losses"]),
+            observed=observed,
+        )
 
 
 def brute_force_cost(state_costs, num_steps, loss_weight, initial_model_id=(-1, 0)):
@@ -172,7 +257,9 @@ class RetrainOptPlannerTests(unittest.TestCase):
             bayes_iterations=2,
             bayes_initial_samples=2,
             bayes_candidates_per_iteration=1,
+            bayes_anchor_steps=(0.0,),
             acquisition="expected",
+            record_bayes_true_history=True,
         )
         planner = RetrainingPlanner(timeline, PrototypeClassifierAdapter(), config=config)
         result = planner.plan(method="bayes")
@@ -188,6 +275,42 @@ class RetrainOptPlannerTests(unittest.TestCase):
         )
         self.assertEqual(result.metadata["bayes_backend"], "lightweight")
         self.assertTrue(result.metadata["selected_sequence_evaluated_exactly"])
+        self.assertEqual(result.metadata["bayes_iterations_completed"], 2)
+        self.assertFalse(result.metadata["bayes_stopped_early"])
+        self.assertEqual(len(result.metadata["bayes_initial_candidates"]), 2)
+        self.assertTrue(
+            all(
+                isinstance(candidate, tuple) and len(candidate) == 2
+                for candidate in result.metadata["bayes_initial_candidates"]
+            )
+        )
+        self.assertEqual(len(result.metadata["bayes_estimated_total_history"]), 2)
+        self.assertTrue(
+            all(
+                isinstance(value, float)
+                for value in result.metadata["bayes_estimated_total_history"]
+            )
+        )
+        self.assertEqual(len(result.metadata["bayes_estimated_decisions_history"]), 2)
+        for decision_history in result.metadata["bayes_estimated_decisions_history"]:
+            self.assertEqual(len(decision_history), timeline.num_steps)
+            self.assertTrue(
+                all(
+                    set(decision) == {"action", "n_samples", "trained_at"}
+                    for decision in decision_history
+                )
+            )
+        self.assertEqual(len(result.metadata["bayes_true_total_history"]), 2)
+        self.assertTrue(
+            all(
+                isinstance(value, float)
+                for value in result.metadata["bayes_true_total_history"]
+            )
+        )
+        self.assertGreaterEqual(
+            min(result.metadata["bayes_true_total_history"]),
+            0.0,
+        )
         serialized = result.to_dict()
         self.assertEqual(serialized["method"], "bayes")
         self.assertEqual(len(serialized["decisions"]), timeline.num_steps)
@@ -223,6 +346,165 @@ class RetrainOptPlannerTests(unittest.TestCase):
         self.assertAlmostEqual(result.training_cost, expected_training, places=9)
         self.assertAlmostEqual(result.loss_cost, expected_loss, places=9)
 
+    def test_bayes_true_history_does_not_pollute_observed_candidate_cache(self):
+        timeline = self.build_timeline()
+        config = PlannerConfig(
+            n_choices=(0.5, 1.0),
+            min_train_size=1,
+            time_cost_weight=0.0,
+            loss_cost_weight=1.0,
+        )
+        planner = RetrainingPlanner(timeline, PrototypeClassifierAdapter(), config=config)
+        initial_eval = planner.engine.evaluate_initial_model()
+        decision_history = [
+            [
+                Decision(DecisionAction.KEEP),
+                Decision(DecisionAction.RETRAIN, n_samples=2, trained_at=1),
+                Decision(DecisionAction.KEEP),
+            ]
+        ]
+
+        self.assertEqual(len(list(planner.engine.iter_cached_candidates())), 0)
+        true_totals = planner._exact_total_history_for_sequences(initial_eval, decision_history)
+
+        self.assertEqual(len(true_totals), 1)
+        self.assertEqual(len(list(planner.engine.iter_cached_candidates())), 0)
+
+    def test_bayes_sequence_acquisition_evaluates_retrain_decisions_from_acquisition_schedule(self):
+        state_costs = {
+            (-1, 0): {
+                "training_cost": 0.0,
+                "future_losses": {0: 100.0, 1: 100.0, 2: 100.0, 3: 100.0},
+            },
+            (0, 1): {
+                "training_cost": 500.0,
+                "future_losses": {0: 100.0, 1: 100.0, 2: 100.0, 3: 100.0},
+            },
+            (1, 1): {
+                "training_cost": 1.0,
+                "future_losses": {1: 1.0, 2: 1.0, 3: 100.0},
+            },
+            (2, 1): {
+                "training_cost": 500.0,
+                "future_losses": {2: 100.0, 3: 100.0},
+            },
+            (3, 1): {
+                "training_cost": 1.0,
+                "future_losses": {3: 1.0},
+            },
+        }
+        planner = RetrainingPlanner(
+            _TinyTimeline(),
+            _NoopAdapter(),
+            config=PlannerConfig(
+                n_choices=(1,),
+                loss_cost_weight=1.0,
+                bayes_iterations=1,
+                bayes_initial_samples=1,
+                bayes_anchor_steps=(0.0,),
+                bayes_candidates_per_iteration=1,
+                acquisition="expected",
+            ),
+        )
+        planner.engine = _StaticEvaluationEngine(state_costs)
+        planner._fit_surrogates = lambda evaluations: _StaticSurrogate(state_costs)
+
+        result = planner.plan(method="bayes")
+
+        self.assertEqual(result.metadata["bayes_selection_strategy"], "sequence")
+        self.assertEqual(
+            result.metadata["bayes_new_candidates_by_iteration"],
+            [[(1, 1), (3, 1)]],
+        )
+        self.assertEqual(result.metadata["bayes_retrain_steps_by_iteration"], [[1, 3]])
+
+    def test_estimated_state_costs_use_batched_loss_prediction_when_available(self):
+        planner = RetrainingPlanner(
+            _TinyTimeline(num_steps=3),
+            _NoopAdapter(),
+            config=PlannerConfig(n_choices=(1,), min_train_size=1),
+        )
+        all_candidates = planner._all_candidate_ids()
+        initial_eval = CandidateEvaluation(
+            model_id=(-1, 0),
+            dataset_size=0,
+            training_seconds=0.0,
+            training_cost=0.0,
+            future_losses={0: 0.2, 1: 0.2, 2: 0.2},
+            observed=True,
+        )
+        surrogate = _BatchLossOnlySurrogate()
+
+        state_costs = planner._build_estimated_state_costs(
+            initial_eval,
+            all_candidates,
+            [],
+            surrogate,
+        )
+
+        self.assertEqual(len(surrogate.loss_batch_calls), len(all_candidates))
+        self.assertEqual(
+            state_costs[(0, 1)]["future_losses"],
+            {0: 0.1, 1: 0.11, 2: 0.12000000000000001},
+        )
+
+    def test_bayes_sequence_acquisition_supplements_to_minimum_new_candidates(self):
+        state_costs = {
+            (-1, 0): {
+                "training_cost": 0.0,
+                "future_losses": {0: 100.0, 1: 100.0, 2: 100.0},
+            },
+            (0, 1): {
+                "training_cost": 500.0,
+                "future_losses": {0: 100.0, 1: 100.0, 2: 100.0},
+            },
+            (1, 1): {
+                "training_cost": 1.0,
+                "future_losses": {1: 1.0, 2: 1.0},
+            },
+            (2, 1): {
+                "training_cost": 2.0,
+                "future_losses": {2: 2.0},
+            },
+        }
+        planner = RetrainingPlanner(
+            _TinyTimeline(num_steps=3),
+            _NoopAdapter(),
+            config=PlannerConfig(
+                n_choices=(1,),
+                loss_cost_weight=1.0,
+                bayes_iterations=1,
+                bayes_initial_samples=1,
+                bayes_anchor_steps=(0.0,),
+                bayes_candidates_per_iteration=2,
+                acquisition="expected",
+            ),
+        )
+        planner.engine = _StaticEvaluationEngine(state_costs)
+        planner._fit_surrogates = lambda evaluations: _StaticSurrogate(state_costs)
+
+        result = planner.plan(method="bayes")
+
+        self.assertEqual(
+            result.metadata["bayes_new_candidates_by_iteration"],
+            [[(1, 1), (2, 1)]],
+        )
+
+    def test_bayes_seed_candidates_cover_all_n_choices_at_anchor_steps(self):
+        planner = RetrainingPlanner(
+            _TinyTimeline(num_steps=5),
+            _NoopAdapter(),
+            config=PlannerConfig(
+                n_choices=(1, 2),
+                bayes_initial_samples=1,
+                bayes_anchor_steps=(0.0, 0.5, 1.0),
+            ),
+        )
+
+        selected = set(planner._seed_bayes_candidates(planner._all_candidate_ids()))
+
+        self.assertTrue({(0, 1), (0, 2), (2, 1), (2, 2), (4, 1), (4, 2)}.issubset(selected))
+
     def test_empty_and_out_of_range_sampling_is_handled(self):
         timeline = ArrayTimelineAdapter(
             train_blocks=[
@@ -231,7 +513,7 @@ class RetrainOptPlannerTests(unittest.TestCase):
             ],
             eval_blocks=[
                 [((0.0,), 0), ((1.0,), 1)],
-                [],
+                [((0.0,), 0), ((1.0,), 1)],
             ],
         )
         sample = timeline.sample_train_block(0, 10, seed=1)
@@ -298,7 +580,7 @@ class RetrainOptPlannerTests(unittest.TestCase):
         self.assertLessEqual(result.loss_cost, 1.0)
 
     def test_resolve_n_choices_supports_mixed_fraction_and_absolute_inputs(self):
-        config = PlannerConfig(n_choices=(0.0, 0.25, 0.5, 3, 99), min_train_size=2)
+        config = PlannerConfig(n_choices=(0.25, 0.5, 3, 99), min_train_size=2)
         self.assertEqual(config.resolve_n_choices(8), [2, 3, 4, 8])
 
     def test_unknown_bayes_backend_is_rejected(self):
@@ -309,6 +591,90 @@ class RetrainOptPlannerTests(unittest.TestCase):
                 PrototypeClassifierAdapter(),
                 config=PlannerConfig(bayes_backend="not-a-backend"),
             )
+
+    @unittest.skipIf(surrogate_module._np is None, "NumPy is not installed.")
+    def test_nearest_neighbor_numpy_path_matches_dependency_free_path(self):
+        rows = [
+            (0.0, 1.0, 5.0),
+            (1.0, 2.0, 4.0),
+            (2.0, 3.0, 3.0),
+            (3.0, 4.0, 2.0),
+            (4.0, 5.0, 1.0),
+        ]
+        targets = [5.0, 4.0, 3.0, 2.0, 1.0]
+        query = (1.5, 2.5, 3.5)
+
+        fast = NearestNeighborRegressor(k_neighbors=3, uncertainty_floor=0.05)
+        fast.fit(rows, targets)
+        fast_mean, fast_std = fast.predict(query)
+
+        original_numpy = surrogate_module._np
+        try:
+            surrogate_module._np = None
+            fallback = NearestNeighborRegressor(k_neighbors=3, uncertainty_floor=0.05)
+            fallback.fit(rows, targets)
+            fallback_mean, fallback_std = fallback.predict(query)
+        finally:
+            surrogate_module._np = original_numpy
+
+        self.assertAlmostEqual(fast_mean, fallback_mean, places=12)
+        self.assertAlmostEqual(fast_std, fallback_std, places=12)
+
+    @unittest.skipIf(surrogate_module._np is None, "NumPy is not installed.")
+    def test_nearest_neighbor_predict_many_matches_single_predictions(self):
+        rows = [
+            (0.0, 1.0, 5.0),
+            (1.0, 2.0, 4.0),
+            (2.0, 3.0, 3.0),
+            (3.0, 4.0, 2.0),
+            (4.0, 5.0, 1.0),
+        ]
+        targets = [5.0, 4.0, 3.0, 2.0, 1.0]
+        queries = [
+            (1.5, 2.5, 3.5),
+            (3.0, 4.0, 2.0),
+            (4.2, 5.2, 0.8),
+        ]
+        regressor = NearestNeighborRegressor(k_neighbors=3, uncertainty_floor=0.05)
+        regressor.fit(rows, targets)
+
+        batch_predictions = regressor.predict_many(queries)
+        single_predictions = [regressor.predict(query) for query in queries]
+
+        self.assertEqual(len(batch_predictions), len(single_predictions))
+        for (batch_mean, batch_std), (single_mean, single_std) in zip(batch_predictions, single_predictions):
+            self.assertAlmostEqual(batch_mean, single_mean, delta=1e-10)
+            self.assertAlmostEqual(batch_std, single_std, delta=1e-10)
+
+    @unittest.skipIf(
+        surrogate_module._np is None or importlib.util.find_spec("sklearn") is None,
+        "NumPy and scikit-learn are required for indexed nearest-neighbor tests.",
+    )
+    def test_nearest_neighbor_builds_optional_sklearn_index_without_changing_predictions(self):
+        rows = [
+            (0.0, 0.0, 0.0),
+            (0.0, 0.0, 0.0),
+            (1.0, 2.0, 3.0),
+            (2.0, 3.0, 4.0),
+            (3.0, 4.0, 5.0),
+            (4.0, 5.0, 6.0),
+        ]
+        targets = [2.0, 4.0, 8.0, 16.0, 32.0, 64.0]
+        queries = [
+            (0.0, 0.0, 0.0),
+            (1.5, 2.5, 3.5),
+            (4.1, 5.1, 6.1),
+        ]
+        regressor = NearestNeighborRegressor(k_neighbors=3, uncertainty_floor=0.05)
+        regressor.fit(rows, targets)
+
+        self.assertIsNotNone(getattr(regressor, "_neighbor_index", None))
+        batch_predictions = regressor.predict_many(queries)
+        single_predictions = [regressor.predict(query) for query in queries]
+
+        for (batch_mean, batch_std), (single_mean, single_std) in zip(batch_predictions, single_predictions):
+            self.assertAlmostEqual(batch_mean, single_mean, delta=1e-10)
+            self.assertAlmostEqual(batch_std, single_std, delta=1e-10)
 
     @unittest.skipIf(importlib.util.find_spec("botorch") is not None, "BoTorch extra is installed.")
     def test_botorch_backend_requires_optional_dependency(self):
@@ -324,6 +690,7 @@ class RetrainOptPlannerTests(unittest.TestCase):
                 bayes_iterations=1,
                 bayes_initial_samples=1,
                 bayes_backend="botorch",
+                bayes_anchor_steps=(0.0,),
             ),
         )
         with self.assertRaisesRegex(RuntimeError, "BoTorch backend requires"):

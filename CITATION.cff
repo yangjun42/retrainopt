@@ -1,0 +1,22 @@
+cff-version: 1.2.0
+message: "Please cite RetrainOpt and the paper describing its offline planning algorithms."
+type: software
+title: RetrainOpt
+version: 0.2.0
+authors:
+  - family-names: Yang
+    given-names: Jun
+repository-code: "https://github.com/yangjun42/retrainopt"
+license: Apache-2.0
+preferred-citation:
+  type: conference-paper
+  title: "Automated Retraining for Cost-Optimal ML"
+  authors:
+    - family-names: Yang
+      given-names: Jun
+    - family-names: Mathioudakis
+      given-names: Michael
+  year: 2026
+  conference:
+    name: "ECML PKDD 2026"
+

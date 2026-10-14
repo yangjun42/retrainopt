@@ -1,88 +1,83 @@
 # Publishing RetrainOpt
 
-This document gives a minimal end-to-end workflow for testing, tagging, and
-publishing `retrainopt`.
+Publishing uses GitHub Actions and PyPI Trusted Publishing (OIDC). A local
+build or green pull request does not upload a release. The publishing workflow
+runs only on `v*` tags, checks that the tag exactly matches `pyproject.toml`, and
+validates that tagged revision before uploading its artifacts.
 
-## One-Time Setup
+## Repository and publisher setup
 
-1. Push this repository to GitHub.
-2. In the GitHub repository settings, add the secret `PYPI_API_TOKEN`.
-3. Confirm that the workflows in `.github/workflows/` are present on the
-   default branch.
-4. Confirm that the PyPI project name `retrainopt` is still available before
-   the first upload.
+The account owner must configure these external settings before publication:
 
-## Local Validation Before Release
+1. On TestPyPI and PyPI, configure the project `retrainopt` (or a pending
+   publisher for a new project) with repository `yangjun42/retrainopt`, workflow
+   `publish.yml`, and GitHub environment `testpypi` or `pypi`, respectively.
+2. Create the corresponding GitHub environments and configure their protection
+   rules. Restrict production publishing to reviewed release tags.
+3. Enable GitHub Pages with GitHub Actions as its source. Documentation deploys
+   through the `github-pages` environment.
+4. Confirm the workflows are enabled and that the publisher names, repository
+   ownership and environment names match exactly.
 
-Create a fresh environment:
+The checked-in workflow expects this setup; it does not create publisher
+accounts. It does not require a `PYPI_API_TOKEN` secret. Do not replace the
+Trusted Publishing configuration with an unreviewed manual upload workaround.
 
-```shell
-python3.13 -m venv .venv
-.venv/bin/python -m pip install -e .
-```
+## Validate before tagging
 
-Run the full test set:
+Use the locked groups and commands in [Development](docs/development.md).
+The release checks cover:
 
-```shell
-.venv/bin/python -m unittest tests.test_retrainopt_planner tests.test_retrainopt_smoke tests.test_retrainopt_example
-PYTHONPATH=src python3.13 examples/verify_exact_against_bruteforce.py
-```
+- core tests and optional sklearn/Torch/BoTorch integrations;
+- exact-vs-exhaustive verification and acquisition regression cases;
+- warning-free HTML and doctest builds;
+- built wheel and source-distribution validation;
+- installation and smoke execution outside the source checkout.
 
-If you want to validate the paper backend locally as well:
+Review [CHANGELOG.md](CHANGELOG.md), migration notes and `CITATION.cff`. Version
+metadata must match the intended release. Keep the paper's frozen reproduction
+pin unchanged.
 
-```shell
-.venv/bin/python -m pip install -e .[botorch]
-.venv/bin/python -m unittest tests.test_retrainopt_botorch
-```
+## Release candidate
 
-Build local artifacts:
-
-```shell
-.venv/bin/python -m pip install build setuptools wheel
-.venv/bin/python -m build --no-isolation
-```
-
-If you are working inside a cloud-synced directory and hit timestamp or
-`egg-info` update errors during build, build from a clean local clone or a
-temporary non-synced directory instead.
-
-Expected outputs:
-
-- `dist/retrainopt-<version>.tar.gz`
-- `dist/retrainopt-<version>-py3-none-any.whl`
-
-The GitHub CI workflow also validates:
-
-- source install on Python 3.10-3.13
-- wheel install smoke from built artifacts
-- the BoTorch backend on Python 3.13 with `.[botorch]`
-
-## Releasing a New Version
-
-1. Update the version in `pyproject.toml`.
-2. Update the version in `src/retrainopt/__init__.py`.
-3. Commit the changes.
-4. Create an annotated tag:
+For a candidate such as `0.2.0rc1`, set the package version to `0.2.0rc1` and use
+the corresponding tag `v0.2.0rc1`. After the reviewed commit is ready:
 
 ```shell
-git tag -a v0.1.0 -m "RetrainOpt 0.1.0"
+git tag -a v0.2.0rc1 -m 'RetrainOpt 0.2.0rc1'
+git push origin v0.2.0rc1
 ```
 
-5. Push the branch and the tag:
+The workflow routes `rc` versions to **TestPyPI** using environment `testpypi`.
+It reuses the validated distributions, verifies their checksums, uploads them,
+then tests an anonymous installation from that index. Only after verification
+succeeds does it create the GitHub prerelease with artifacts and checksums.
+
+This core-only manual verification is useful after the workflow completes:
 
 ```shell
-git push origin main
-git push origin v0.1.0
+python -m pip install --no-deps --index-url https://test.pypi.org/simple/ 'retrainopt==0.2.0rc1'
+python -c 'import retrainopt; print(retrainopt.__version__)'
 ```
 
-The `publish.yml` workflow will build the package and publish it to PyPI using
-`PYPI_API_TOKEN`.
+Use a clean environment and run outside the source checkout. TestPyPI is for
+the candidate package; optional integration dependencies should come from
+their normal package indexes through the locked validation environment.
 
-## Manual Fallback
+## Final release
 
-If you want to publish manually instead of GitHub Actions:
+After candidate verification, update the package and citation version to
+`0.2.0`, refresh the lock as needed, and merge the reviewed release changes to
+`main`. Create and push `v0.2.0` from that revision. The workflow requires a
+stable release tag to be an ancestor of `origin/main`.
 
-```shell
-.venv/bin/python -m pip install twine
-.venv/bin/python -m twine upload dist/*
-```
+Stable versions route to **PyPI** using environment `pypi`. Upload, anonymous
+index-install verification, and GitHub release creation follow the same order
+as the candidate. The documentation workflow deploys `main` on a push or an
+explicit dispatch targeting `main`; release uploads do not independently
+publish documentation.
+
+If publisher configuration is missing or a check fails, preserve the failed
+run and artifacts and fix the cause. Report publication as incomplete. PyPI
+versions are not overwriteable; use a new candidate version for changed
+candidate artifacts rather than moving an already published tag.

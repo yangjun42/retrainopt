@@ -23,7 +23,9 @@ class RetrainOptSmokeTests(unittest.TestCase):
         import retrainopt.adapters
 
         self.assertIn("RetrainingPlanner", retrainopt.__all__)
-        self.assertEqual(retrainopt.__version__, "0.1.0")
+        from importlib.metadata import version
+
+        self.assertEqual(retrainopt.__version__, version("retrainopt"))
         self.assertTrue(hasattr(retrainopt.adapters, "BinaryTimelineAdapter"))
 
         pyproject_text = (PROJECT_ROOT / "pyproject.toml").read_text(encoding="utf-8")
