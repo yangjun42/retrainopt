@@ -20,6 +20,13 @@ adapters can support other data structures and modeling tasks. Keep
 preprocessing fitted on training data; fitting it on the full evaluation
 timeline changes the experiment and can leak evaluation information.
 
+Prototype and sklearn adapters accept integer class labels, including finite
+integer-valued real numbers such as `1.0`. Fractional, non-finite, boolean and
+string labels raise `ValueError`. Prototype features must be finite real
+scalars or nonempty flat lists/tuples; every sample must have the same dimension,
+including evaluation samples. The sklearn estimator and PyTorch model retain
+their own feature and target requirements.
+
 The optional examples use synthetic, in-memory data and run on CPU:
 
 ```shell

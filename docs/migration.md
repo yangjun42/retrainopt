@@ -1,5 +1,24 @@
 # Migration guide
 
+## From 0.3.0 to 0.3.1
+
+The planning and online policy APIs are unchanged. This patch rejects malformed
+inputs that could previously produce a plausible but incorrect loss or cost.
+
+- Prototype and sklearn class labels must be integers or finite integer-valued
+  real numbers such as `1.0`. Fractional, boolean, string and non-finite labels
+  raise `ValueError`; encode classes explicitly instead of relying on coercion.
+- Prototype features must be finite real scalars or nonempty flat lists/tuples
+  with one consistent dimension across training and evaluation.
+- Custom evaluator records must use integer model IDs, excluding booleans, and
+  the actual boolean `observed=True`; equal-valued floats and truthy strings
+  are no longer accepted.
+
+Base still makes periodic decisions without loss features, but the shared
+`OnlineController` requires current evaluation labels to measure loss before
+executing either policy. See [Online retraining](online.md) for this distinction
+and for carrying an existing model's accumulated staleness into a controller.
+
 ## From 0.2 to 0.3
 
 Version 0.3 adds the Base and Learned online policies alongside the existing

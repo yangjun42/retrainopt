@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.3.1 — 2026-10-14
+
+### Correctness and validation
+
+- Reject fractional, non-finite, boolean and string class labels in the
+  Prototype and sklearn adapters instead of silently converting them to integers.
+  Integer-valued real labels remain supported.
+- Reject non-finite, empty or inconsistent feature vectors in the Prototype
+  adapter, including mismatches between training and evaluation dimensions.
+- Validate the actual model IDs returned by custom evaluators and require a
+  boolean `observed=True` flag.
+- Exercise real GP fitting and predictions for unobserved candidates in the
+  BoTorch integration test, and verify online continuation from nonzero history
+  against uninterrupted execution.
+
+### Documentation
+
+- Distinguish Base's label-independent decision rule from the controller's
+  current-loss measurement requirement.
+- Clarify online cost and historical initialization limitations, and describe
+  the approximate planner's implementation choices relative to the paper.
+- Keep the simpler retraining-schedule introduction and citation guidance.
+
 ## 0.3.0 — 2026-10-14
 
 ### Online policies

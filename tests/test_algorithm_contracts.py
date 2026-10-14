@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import FrozenInstanceError
+from dataclasses import FrozenInstanceError, replace
 import math
 import random
 import unittest
@@ -296,6 +296,47 @@ class PlannerBoundaryContracts(unittest.TestCase):
         self.assertEqual(result.total_cost, 2)
         self.assertEqual(result.metadata["bayes_iterations_completed"], 0)
         self.assertEqual(result.metadata["initial_model_source"], "provider_supplied")
+
+    def test_provider_cannot_alias_integer_model_ids_with_floats_or_booleans(self):
+        table = {
+            (-1, 0): {"training_cost": 0, "future_losses": {0: 1}},
+            (0, 1): {"training_cost": 0, "future_losses": {0: 0}},
+        }
+        for requested, aliases in (
+            ((-1, 0), ((-1.0, 0), (-1, False))),
+            ((0, 1), ((0.0, 1), (False, 1), (0, 1.0), (0, True))),
+        ):
+            for alias in aliases:
+                class AliasedProvider(TableProvider):
+                    def _get(self, model_id):
+                        result = super()._get(model_id)
+                        return replace(result, model_id=alias) if model_id == requested else result
+                for method in ("exact", "bayes"):
+                    with self.subTest(requested=requested, alias=alias, method=method):
+                        planner = RetrainingPlanner(
+                            timeline(1), NoTraining(), PlannerConfig(n_choices=(1,)), evaluator=AliasedProvider(table),
+                        )
+                        with self.assertRaisesRegex(ValueError, "Invalid model id"):
+                            planner.plan(method)
+
+    def test_provider_observed_flag_must_be_true_boolean(self):
+        table = {
+            (-1, 0): {"training_cost": 0, "future_losses": {0: 1}},
+            (0, 1): {"training_cost": 0, "future_losses": {0: 0}},
+        }
+        for requested in table:
+            for invalid in (False, "false", "true", 0, 1, None):
+                class UnobservedProvider(TableProvider):
+                    def _get(self, model_id):
+                        result = super()._get(model_id)
+                        return replace(result, observed=invalid) if model_id == requested else result
+                for method in ("exact", "bayes"):
+                    with self.subTest(requested=requested, observed=invalid, method=method):
+                        planner = RetrainingPlanner(
+                            timeline(1), NoTraining(), PlannerConfig(n_choices=(1,)), evaluator=UnobservedProvider(table),
+                        )
+                        with self.assertRaisesRegex(ValueError, "observed costs"):
+                            planner.plan(method)
 
     def test_provider_nan_or_wrong_candidate_is_rejected(self):
         invalid = TableProvider({(-1, 0): {"training_cost": 0, "future_losses": {0: float("nan")}}})

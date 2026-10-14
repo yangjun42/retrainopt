@@ -37,16 +37,29 @@ remaining candidates. `total_cost` is that schedule's measured cost;
 `estimated_total_cost` is the pre-measurement surrogate estimate. Neither
 certifies that approximate search found the global optimum.
 
+Every DP solve still considers the full configured candidate grid. Approximate
+search reduces measured model fits; it does not reduce the DP grid or its
+state-space complexity.
+
 The default `lightweight` backend is a nearest-neighbor heuristic. Its
 uncertainty scores are not calibrated GP posterior uncertainties. The optional
-`botorch` backend fits Gaussian-process surrogates.
+`botorch` backend fits Gaussian-process surrogates. The library enriches the
+paper's training-cost input $n$ with training step, available dataset size, and
+sample fraction. Loss features also include evaluation step and model age.
+With only one observed row, the BoTorch regressor uses that target as a constant
+mean with zero standard deviation instead of fitting a GP. The planner clips
+negative predicted cost and loss means to zero without changing their standard
+deviations; these are engineering conventions, not additional paper guarantees.
 
 The default `sequence` selection follows an acquisition-minimizing DP schedule.
-The current implementation also supports anchors, candidate ranking, and
-supplementing iterations that propose too few new models. In particular,
-`bayes_candidates_per_iteration` is a minimum target, not a hard evaluation
-budget. Sequence selection can propose more, and measuring the final selected
-schedule can require additional candidates.
+Initialization measures every configured sample count at each anchor step,
+then samples random candidates if needed to reach `bayes_initial_samples`.
+Anchors can therefore exceed that initial target. Candidate ranking supplies
+new candidates when the selected sequence has none, and supplements iterations
+that propose too few. These are library extensions to the paper's sequence
+search. `bayes_candidates_per_iteration` is a minimum target, not a hard
+evaluation budget. Sequence selection can propose more, and measuring the final
+selected schedule can require additional candidates.
 
 To study the paper's random-design/GP/sequence formulation explicitly, use
 `bayes_backend="botorch"`, `bayes_anchor_steps=()`, and

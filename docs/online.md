@@ -24,6 +24,13 @@ both `initial_model` and `config.initial_loss` are omitted, the helper fits a
 bootstrap model on the first historical step and uses its loss there as the
 reference. The deployment controller does not perform this implicit fit.
 
+The historical helper uses timestep zero as the initial model's training time
+and starts accumulated staleness at zero. It has no arguments for carrying a
+model's age or accumulated staleness from before that historical window.
+Supplying `initial_reference_loss` changes the loss reference, not this clock
+or accumulated history. This limits its use for tuning on a moving historical
+window; deployment resumption supports explicit carry as described below.
+
 This example calibrates Base on three historical steps and processes the next
 three steps sequentially:
 
@@ -96,8 +103,11 @@ weighted loss cost and their sum `total_cost`. After a successful retraining,
 the new model's current loss becomes its reference loss and accumulated
 staleness resets for the next timestep.
 
-Training time measures the model fit only. Sampling, evaluation and policy
-inference time are excluded from this objective. A retraining request below
+The online controller and historical training helper use fit wall-clock time
+multiplied by `time_cost_weight` as their training cost. They do not expose a
+custom training-cost evaluator for energy, monetary or other measurements.
+Sampling, evaluation and policy inference time are excluded from this
+objective. A retraining request below
 `config.min_train_size` is rejected when enough data are available; an
 undersized prediction is not silently expanded.
 
@@ -108,9 +118,15 @@ deployed model. The controller advances only after a successful step; an
 unavailable timestep raises `IndexError` and can be retried when the timeline
 grows.
 
-Both policies use the current model's observed predictive loss. An application
-therefore needs labels for the corresponding evaluation observations before
-making that decision. Delayed-label handling and the cost of acquiring those
+The Learned policy uses staleness derived from the current model's observed
+predictive loss. The Base policy itself needs only elapsed time and the
+available training size; its decision does not depend on current loss.
+The shared `OnlineController` evaluates current loss before calling either
+policy so that it can maintain features and report costs. When using a real
+deployed model with this controller, labels must therefore be available for
+the current evaluation observations. Applications that need Base decisions
+without labels can call `BaseOnlinePolicy.decide` directly and manage execution
+and measurement separately. Delayed-label handling and the cost of acquiring
 labels require an application-level policy.
 
 The policies use a historical prefix to calibrate deployment decisions. Their

@@ -77,6 +77,11 @@ diagnostics without adding a new observation to the search cache.
 If `initial_loss` is configured, the provider's initial losses must match that
 baseline at every timestep.
 
+Model IDs must be pairs of integers (excluding booleans), including on records
+returned for a requested candidate. An equal-valued float is not an integer ID.
+Every provider record must set `observed=True` as a boolean; strings such as
+`"false"` and numeric flags are rejected.
+
 See `examples/verify_exact_against_bruteforce.py` for a complete fixed-table
 provider and independent exhaustive verification. No subclass of the default
 evaluation engine is needed.
