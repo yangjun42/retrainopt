@@ -1,11 +1,12 @@
 # RetrainOpt
 
-Decide **when to retrain a model and how much data to use**,
-balancing training cost and predictive loss.
+**Cost-aware retraining schedules for machine learning.**
 
-RetrainOpt combines exact dynamic programming and surrogate-guided offline
-search with the Base and Learned online retraining strategies. It implements
-algorithms from [*Automated Retraining for Cost-Optimal ML*](https://link.springer.com/chapter/10.1007/978-3-032-37654-1_14)
+RetrainOpt helps you choose **when to retrain** and **how much data to use**,
+balancing model quality against training cost. Plan a schedule from historical
+data, or make retraining decisions as new data arrives.
+
+Based on [*Automated Retraining for Cost-Optimal ML*](https://link.springer.com/chapter/10.1007/978-3-032-37654-1_14)
 by Jun Yang and Michael Mathioudakis (ECML PKDD 2026).
 
 ## Install
@@ -68,12 +69,8 @@ plan's cost is not an independent future-performance estimate.
 
 For `bayes`, `estimated_total_cost` is the surrogate estimate, while
 `total_cost` is measured for the selected schedule. Approximate search does not
-guarantee the global optimum. Sequence selection can train more models than
-`bayes_candidates_per_iteration`, which is a minimum target, not a hard budget.
-
-`PlanResult.training_cost` is weighted training cost, `loss_cost` is raw summed
-loss, and `weighted_loss_cost` is the loss contribution to `total_cost`.
-Planning's exploratory fits are not part of the selected schedule's objective.
+guarantee the global optimum. See the [algorithm guide](https://yangjun42.github.io/retrainopt/algorithms.html)
+for cost accounting and search budgets.
 
 ## Online retraining
 
@@ -118,12 +115,10 @@ python examples/botorch_timeline.py
 
 ## Citation
 
-If you use RetrainOpt in your work, please cite
-[*Automated Retraining for Cost-Optimal ML*](https://link.springer.com/chapter/10.1007/978-3-032-37654-1_14).
-The paper is included in the [ECML PKDD 2026 proceedings](https://ecmlpkdd.org/2026/proceedings/);
-Springer lists its citation year as 2027. Machine-readable metadata is available in
+If you use RetrainOpt in your research, please cite our paper in the
+[ECML PKDD 2026 proceedings](https://ecmlpkdd.org/2026/proceedings/)
+and report the software version you used. Citation metadata is available in
 [CITATION.cff](https://github.com/yangjun42/retrainopt/blob/main/CITATION.cff).
-Also record the exact RetrainOpt version or release used in your work.
 
 ```bibtex
 @inproceedings{yang2027automated,
