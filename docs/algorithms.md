@@ -1,6 +1,6 @@
 # Algorithms and assumptions
 
-## The objective
+## The offline objective
 
 At time $t$, keep the current model or train a new model on a configured sample
 count $n$. With loss weight $w_\ell$ and time weight $w_t$:
@@ -91,13 +91,13 @@ measured cost, while Variance returns zero. EI and PI return zero at zero
 standard deviation, following the paper's explicit convention. Changing from
 0.1 to 0.2 can therefore change approximate candidate selection and plans.
 
-## Research boundaries
+## Library scope
 
-The maintained package covers offline planning and adapters. Online policies,
-large datasets, figures and experiment orchestration belong in the separate
-`retrainopt-paper-repro` project. The canonical reproduction remains pinned to
-`ecml-pkdd-2026-camera-ready-retrainopt`; upgrading this library does not update
-that pin or replace its results.
+The package provides exact and approximate offline planning, model and data
+adapters, and the Base and Learned online policies. The offline planner can
+use a full timeline; online policies make sequential decisions from observed
+history. Neither online strategy guarantees the globally optimal deployment
+schedule. See [Online retraining](online.md) for their inputs and assumptions.
 
 Zephon's separation of curriculum and execution and Modyn's separation of
 policy, selection and evaluation are useful engineering precedents. RetrainOpt

@@ -15,6 +15,29 @@ engine or calling its private table builders.
 .. autoclass:: retrainopt.PlanResult
    :members: to_dict
 
+.. autoclass:: retrainopt.OnlineState
+   :members:
+
+.. autoclass:: retrainopt.OnlineStepResult
+   :members:
+
+.. autoclass:: retrainopt.OnlineTrainingData
+   :members:
+
+.. autoclass:: retrainopt.OnlinePolicy
+   :members:
+
+.. autoclass:: retrainopt.BaseOnlinePolicy
+   :members:
+
+.. autoclass:: retrainopt.LearnedOnlinePolicy
+   :members:
+
+.. autoclass:: retrainopt.OnlineController
+   :members:
+
+.. autofunction:: retrainopt.collect_online_training_data
+
 .. autoclass:: retrainopt.Decision
 
 .. autoclass:: retrainopt.DecisionAction

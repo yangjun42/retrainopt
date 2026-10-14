@@ -25,6 +25,7 @@ jobs:
       - run: uv sync --locked --group test
       - run: uv run --no-sync python -m pytest -q
       - run: uv run --no-sync python examples/minimal_array_timeline.py
+      - run: uv run --no-sync python examples/online_timeline.py
       - run: uv run --no-sync retrainopt --help
   optional-backends:
     runs-on: ubuntu-latest
@@ -44,6 +45,7 @@ jobs:
         run: uv run --no-sync python -c "import sklearn, torch, botorch, gpytorch"
       - run: uv run --no-sync python -m pytest -q
       - run: uv run --no-sync python examples/sklearn_timeline.py
+      - run: uv run --no-sync python examples/learned_online_timeline.py
       - run: uv run --no-sync python examples/torch_timeline.py
       - run: uv run --no-sync python examples/botorch_timeline.py
   minimum-direct-dependencies:
@@ -67,6 +69,7 @@ jobs:
           PY
       - run: uv run --no-sync python -m pytest -q
       - run: uv run --no-sync python examples/sklearn_timeline.py
+      - run: uv run --no-sync python examples/learned_online_timeline.py
       - run: uv run --no-sync python examples/torch_timeline.py
       - run: uv run --no-sync python examples/botorch_timeline.py
   docs:

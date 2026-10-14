@@ -1,4 +1,24 @@
-# Migrating from 0.1
+# Migration guide
+
+## From 0.2 to 0.3
+
+Version 0.3 adds the Base and Learned online policies alongside the existing
+offline planner. `RetrainingPlanner.plan("exact")` and `plan("bayes")` still
+use the full supplied timeline; choosing one of these methods does not turn
+it into an online policy.
+
+Use `collect_online_training_data(..., history_steps=...)` to train a policy
+from a bounded historical prefix, then `OnlineController.step()` to process
+each deployment step. Construct `BaseOnlinePolicy` from the historical plan,
+or fit `LearnedOnlinePolicy` to its states and decisions. Learned requires the
+`sklearn` extra. See [Online retraining](online.md) for a complete example.
+
+Historical policy training returns a plan and training examples, not a
+deployed model. When starting a controller with an existing model, pass its
+`initial_reference_loss` and set the deployment `start_step` and
+`initial_trained_at` explicitly. Do not also supply `PlannerConfig.initial_loss`.
+
+## From 0.1 to 0.2
 
 Version 0.2 retains `plan("exact")` and `plan("bayes")`, with the following
 behavior and contract changes.
@@ -22,9 +42,4 @@ behavior and contract changes.
   Consumers that enforce an exact dictionary schema must be updated.
 - Supply an `EvaluationProvider` through the `evaluator=` constructor argument
   instead of monkey-patching `planner.engine` or calling private methods.
-
-The published paper's frozen implementation and the canonical reproduction
-pin are unchanged. Keep the pinned release when validating historical paper
-artifacts. Version 0.2 is a maintained library release, not a replacement for
-the original experiment environment.
 
