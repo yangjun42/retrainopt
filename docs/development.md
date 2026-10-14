@@ -43,6 +43,30 @@ it for branch pushes and pull requests; publishing invokes it for the release
 tag. Small deterministic fixtures test DP optimality and acquisition semantics;
 full paper experiments are a separate reproducibility workflow.
 
+## External evaluator compatibility
+
+`scripts/check_repro_compat.py` exercises the real `OfflinePaperRunner` and
+`PaperEvaluationEngine` from a separate paper-repro checkout. It runs a tiny
+synthetic exact/approximate case, then uses the public `evaluator=` interface
+and compares the measured objectives. Each invocation creates a unique
+artifact directory; it does not use historical caches or edit the reproduction
+project's dependency pin.
+
+Run it in a separate environment with the candidate wheel and the reproduction
+project's declared base dependencies, excluding its pinned `retrainopt`
+dependency. Do not run its ordinary dependency synchronization against this
+compatibility environment, which would restore the historical package.
+
+```shell
+python scripts/check_repro_compat.py \
+  --repro-root /path/to/isolated/retrainopt-paper-repro \
+  --artifact-root /path/to/local/compatibility-artifacts
+```
+
+The JSON report records the installed package path/version, reproduction
+commit, artifact namespace and both objectives. This checks API compatibility;
+it does not establish numerical reproduction of published experiments.
+
 ## Runtime and artifacts
 
 Keep virtual environments, package caches, builds and scratch output outside

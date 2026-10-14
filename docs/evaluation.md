@@ -69,11 +69,13 @@ iter_cached_candidates() -> Iterable[CandidateEvaluation]
 
 The initial record has ID `(-1, 0)`, zero training cost, and losses for the
 entire timeline. A candidate `(s, n)` has losses for every timestep from `s`
-through the end. Losses and measured costs must be finite and valid for the
-objective. The provider returns weighted training cost and raw losses;
+through the end. Losses and measured costs must be finite and nonnegative.
+The provider returns weighted training cost and raw losses;
 RetrainOpt applies the loss weight. `iter_cached_candidates()` lists observed
 candidate records, excluding the initial model. The uncached method supports
 diagnostics without adding a new observation to the search cache.
+If `initial_loss` is configured, the provider's initial losses must match that
+baseline at every timestep.
 
 See `examples/verify_exact_against_bruteforce.py` for a complete fixed-table
 provider and independent exhaustive verification. No subclass of the default
