@@ -43,6 +43,24 @@ it for branch pushes and pull requests; publishing invokes it for the release
 tag. Small deterministic fixtures test DP optimality and acquisition semantics;
 full paper experiments are a separate reproducibility workflow.
 
+## Minimum direct dependencies
+
+The `minimum-direct-dependencies` CI job uses Linux and Python 3.10 to exercise
+the lowest compatible versions of the declared runtime extras. It resolves
+with `uv sync --resolution lowest-direct --upgrade --all-extras --group test`,
+requires and reports all optional backends, and runs the full test suite and
+the sklearn, Torch and BoTorch examples. Transitive dependencies remain at the
+newest compatible versions; this checks direct lower bounds, not every possible
+dependency combination. The sklearn floor is 1.4.2 because that release adds
+[NumPy 2 compatibility](https://scikit-learn.org/1.4/whats_new/v1.4.html#version-1-4-2).
+
+This job deliberately resolves a temporary lockfile instead of using
+`--locked`; `--upgrade` removes preferences for versions in the committed
+lockfile. Its checkout and environment are disposable, and it does not build
+or upload release artifacts. The regular matrix and release builds continue
+to use the committed `uv.lock`. Reproduce this lower-bound check only in a
+separate local checkout so it does not replace the normal development lock.
+
 ## External evaluator compatibility
 
 `scripts/check_repro_compat.py` exercises the real `OfflinePaperRunner` and
