@@ -40,8 +40,8 @@ pin unchanged.
 
 ## Release candidate
 
-For the current release candidate, the package version is `0.2.0rc1` and the
-corresponding tag is `v0.2.0rc1`. After the reviewed commit is ready:
+For a candidate such as `0.2.0rc1`, set the package version to `0.2.0rc1` and use
+the corresponding tag `v0.2.0rc1`. After the reviewed commit is ready:
 
 ```shell
 git tag -a v0.2.0rc1 -m 'RetrainOpt 0.2.0rc1'

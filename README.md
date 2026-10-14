@@ -78,11 +78,11 @@ Planning's exploratory fits are not part of the selected schedule's objective.
 
 ## Documentation and examples
 
-- [Quick start](docs/quickstart.md), [algorithm semantics](docs/algorithms.md)
-- [Initial models, costs and evaluator injection](docs/evaluation.md)
-- [Optional adapters and CLI](docs/integrations.md), [API](docs/api.md)
-- [Migration from 0.1](docs/migration.md), [changelog](CHANGELOG.md)
-- [Development and validation](docs/development.md), [publishing](PUBLISHING.md)
+- [Quick start](https://yangjun42.github.io/retrainopt/quickstart.html), [algorithm semantics](https://yangjun42.github.io/retrainopt/algorithms.html)
+- [Initial models, costs and evaluator injection](https://yangjun42.github.io/retrainopt/evaluation.html)
+- [Optional adapters and CLI](https://yangjun42.github.io/retrainopt/integrations.html), [API](https://yangjun42.github.io/retrainopt/api.html)
+- [Migration from 0.1](https://yangjun42.github.io/retrainopt/migration.html), [changelog](https://github.com/yangjun42/retrainopt/blob/main/CHANGELOG.md)
+- [Development and validation](https://yangjun42.github.io/retrainopt/development.html), [publishing](https://github.com/yangjun42/retrainopt/blob/main/PUBLISHING.md)
 
 ```shell
 python examples/minimal_array_timeline.py
@@ -96,7 +96,7 @@ python examples/botorch_timeline.py
 Version 0.2 corrects acquisition composition and tightens public contracts.
 It does not replace the paper's frozen code or the separate canonical
 `retrainopt-paper-repro` pin `ecml-pkdd-2026-camera-ready-retrainopt`.
-Use [CITATION.cff](CITATION.cff) to cite this software and the paper.
+Use [CITATION.cff](https://github.com/yangjun42/retrainopt/blob/main/CITATION.cff) to cite this software and the paper.
 
 Apache-2.0 licensed. Source and issues:
 [github.com/yangjun42/retrainopt](https://github.com/yangjun42/retrainopt).

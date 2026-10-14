@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.2.0rc1
+## 0.2.0 — 2026-10-14
 
 ### Correctness
 
@@ -30,7 +30,7 @@
 Approximate plans can change under the corrected acquisition semantics.
 The frozen paper implementation and canonical experiment pin are unchanged.
 
-## 0.1.0
+## 0.1.0 (unpublished)
 
 Initial standalone library with exact and approximate planning, timeline/model
 adapters, and a binary-timeline CLI.
