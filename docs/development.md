@@ -13,6 +13,8 @@ uv sync --locked --all-extras --group test --group build --group docs
 uv run --no-sync python -m pytest
 uv run --no-sync python examples/minimal_array_timeline.py
 uv run --no-sync python examples/verify_exact_against_bruteforce.py
+uv run --no-sync python examples/online_timeline.py
+uv run --no-sync python examples/learned_online_timeline.py
 ```
 
 Optional integration examples are listed in [Integrations](integrations.md).
@@ -46,7 +48,8 @@ in clean environments, from a directory outside the checkout. Importing from
 The reusable `validation.yml` workflow runs source tests, optional integration
 checks, documentation/doctests and installed-distribution checks. CI invokes
 it for branch pushes and pull requests; publishing invokes it for the release
-tag. Small deterministic fixtures test DP optimality and acquisition semantics;
+tag. Small deterministic fixtures test DP optimality, acquisition semantics,
+online decision timing and the boundary between historical and deployment data;
 full paper experiments are a separate reproducibility workflow.
 
 ## Minimum direct dependencies
@@ -106,13 +109,10 @@ HTML is published separately by the documentation workflow. Publication is
 complete only when index installation and the corresponding release checks
 succeed; a local build alone is not a published release.
 
-## Paper provenance and citation
+## Citation
 
-The canonical experiment project remains pinned to
-`ecml-pkdd-2026-camera-ready-retrainopt` (its documented short commit is
-`1fc9f59`). Version 0.2 does not rewrite that tag, upgrade the reproduction
-project, or replace paper artifacts.
-
-`CITATION.cff` records the software and the paper *Automated Retraining for
-Cost-Optimal ML*, Jun Yang and Michael Mathioudakis, 2026. It intentionally
-omits unverified DOI, page and volume metadata.
+`CITATION.cff` records the software and
+[*Automated Retraining for Cost-Optimal ML*](https://link.springer.com/chapter/10.1007/978-3-032-37654-1_14)
+by Jun Yang and Michael Mathioudakis. Use Springer's publication metadata for
+paper citations: ECML PKDD 2026, proceedings year 2027, volume 16941,
+pages 231–249. The README includes a BibTeX entry.

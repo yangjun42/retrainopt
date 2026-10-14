@@ -4,16 +4,18 @@
 
 - [ ] Release changes reviewed; working tree and tag identify the intended revision.
 - [ ] Package version, citation version and tag agree.
-- [ ] Changelog and migration notes describe acquisition and initial-model changes.
+- [ ] Changelog and migration notes describe the release's public API and behavior.
 - [ ] Exact DP passes independent exhaustive checks on small fixtures.
 - [ ] Whole-stage acquisition, weighted variance, observed entries and zero-variance EI/PI pass regression checks.
 - [ ] Evaluator, configuration, data and cost contracts pass tests.
+- [ ] Online features, policy training, model transitions and current-step cost accounting pass tests.
+- [ ] Historical policy training and online execution cannot read future data.
 - [ ] Paper reproduction tag/pin and frozen artifacts remain unchanged.
 
 ## Distribution and documentation
 
 - [ ] Locked test/build/docs groups resolve and validate.
-- [ ] Minimal example and optional sklearn/Torch/BoTorch examples pass.
+- [ ] Minimal, online and optional sklearn/Torch/BoTorch examples pass.
 - [ ] Sphinx HTML and doctests build without warnings.
 - [ ] Wheel and sdist build, metadata checks pass, and checksums are recorded.
 - [ ] Wheel and sdist-derived installations run outside the source checkout.

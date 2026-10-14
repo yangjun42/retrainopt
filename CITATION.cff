@@ -1,8 +1,8 @@
 cff-version: 1.2.0
-message: "Please cite RetrainOpt and the paper describing its offline planning algorithms."
+message: "Please cite RetrainOpt and the paper describing its retraining algorithms."
 type: software
 title: RetrainOpt
-version: 0.2.0
+version: 0.3.0
 authors:
   - family-names: Yang
     given-names: Jun
@@ -16,7 +16,9 @@ preferred-citation:
       given-names: Jun
     - family-names: Mathioudakis
       given-names: Michael
-  year: 2026
+  year: 2027
+  doi: "10.1007/978-3-032-37654-1_14"
+  url: "https://link.springer.com/chapter/10.1007/978-3-032-37654-1_14"
   conference:
     name: "ECML PKDD 2026"
 

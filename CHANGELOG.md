@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.3.0 — 2026-10-14
+
+### Online policies
+
+- Add the paper's periodic Base and random-forest Learned online policies,
+  using current staleness, accumulated staleness and time since retraining.
+- Derive policy training examples from an explicitly bounded historical
+  timeline. Online execution measures only the current step and retains the
+  deployed model between calls.
+- Keep exact and approximate offline planning available with their existing
+  interfaces and objective semantics.
+
+### Documentation
+
+- Document online training and execution with runnable examples.
+- Link the official ECML PKDD proceedings chapter and provide its verified
+  publisher citation, alongside a software citation.
+
 ## 0.2.0 — 2026-10-14
 
 ### Correctness
@@ -28,7 +46,6 @@
   staged release procedure.
 
 Approximate plans can change under the corrected acquisition semantics.
-The frozen paper implementation and canonical experiment pin are unchanged.
 
 ## 0.1.0 (unpublished)
 

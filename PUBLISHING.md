@@ -29,7 +29,8 @@ Use the locked groups and commands in [Development](docs/development.md).
 The release checks cover:
 
 - core tests and optional sklearn/Torch/BoTorch integrations;
-- exact-vs-exhaustive verification and acquisition regression cases;
+- exact-vs-exhaustive verification, acquisition regression cases, and online
+  policy/causality checks;
 - warning-free HTML and doctest builds;
 - built wheel and source-distribution validation;
 - installation and smoke execution outside the source checkout.
@@ -40,12 +41,12 @@ pin unchanged.
 
 ## Release candidate
 
-For a candidate such as `0.2.0rc1`, set the package version to `0.2.0rc1` and use
-the corresponding tag `v0.2.0rc1`. After the reviewed commit is ready:
+For a candidate such as `0.3.0rc1`, set the package version to `0.3.0rc1` and use
+the corresponding tag `v0.3.0rc1`. After the reviewed commit is ready:
 
 ```shell
-git tag -a v0.2.0rc1 -m 'RetrainOpt 0.2.0rc1'
-git push origin v0.2.0rc1
+git tag -a v0.3.0rc1 -m 'RetrainOpt 0.3.0rc1'
+git push origin v0.3.0rc1
 ```
 
 The workflow routes `rc` versions to **TestPyPI** using environment `testpypi`.
@@ -56,7 +57,7 @@ succeeds does it create the GitHub prerelease with artifacts and checksums.
 This core-only manual verification is useful after the workflow completes:
 
 ```shell
-python -m pip install --no-deps --index-url https://test.pypi.org/simple/ 'retrainopt==0.2.0rc1'
+python -m pip install --no-deps --index-url https://test.pypi.org/simple/ 'retrainopt==0.3.0rc1'
 python -c 'import retrainopt; print(retrainopt.__version__)'
 ```
 
@@ -67,8 +68,8 @@ their normal package indexes through the locked validation environment.
 ## Final release
 
 After candidate verification, update the package and citation version to
-`0.2.0`, refresh the lock as needed, and merge the reviewed release changes to
-`main`. Create and push `v0.2.0` from that revision. The workflow requires a
+`0.3.0`, refresh the lock as needed, and merge the reviewed release changes to
+`main`. Create and push `v0.3.0` from that revision. The workflow requires a
 stable release tag to be an ancestor of `origin/main`.
 
 Stable versions route to **PyPI** using environment `pypi`. Upload, anonymous

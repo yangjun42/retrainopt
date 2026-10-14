@@ -12,7 +12,10 @@ import sys
 import tempfile
 
 import retrainopt
-from retrainopt import PlannerConfig, RetrainingPlanner
+from retrainopt import (
+    BaseOnlinePolicy, OnlineController, PlannerConfig, RetrainingPlanner,
+    collect_online_training_data,
+)
 from retrainopt.adapters import ArrayTimelineAdapter, PrototypeModelAdapter
 
 
@@ -51,6 +54,19 @@ def main() -> None:
             assert result.metadata["bayes_iterations_completed"] == 1
         costs[method] = result.total_cost
     assert costs["exact"] == costs["bayes"]
+    online_config = PlannerConfig(n_choices=(1.0,), initial_loss=1.0, time_cost_weight=0.0)
+    history = collect_online_training_data(
+        timeline, PrototypeModelAdapter(), online_config, history_steps=2,
+    )
+    online = OnlineController(
+        timeline, PrototypeModelAdapter(), BaseOnlinePolicy.from_plan(history.plan),
+        online_config, start_step=2,
+    )
+    online_results = [online.step(), online.step()]
+    assert [result.state.step for result in online_results] == [2, 3]
+    for result in online_results:
+        assert math.isfinite(result.total_cost)
+        assert math.isclose(result.total_cost, result.training_cost + result.weighted_loss_cost)
     with tempfile.TemporaryDirectory() as directory:
         subprocess.run([sys.executable, "-m", "retrainopt", "--help"], cwd=directory, check=True, stdout=subprocess.DEVNULL)
     print(json.dumps({"version": version, "module": retrainopt.__file__, "costs": costs}))
