@@ -690,6 +690,7 @@ class RetrainOptPlannerTests(unittest.TestCase):
                 bayes_iterations=1,
                 bayes_initial_samples=1,
                 bayes_backend="botorch",
+                bayes_anchor_steps=(0.0,),
             ),
         )
         with self.assertRaisesRegex(RuntimeError, "BoTorch backend requires"):
