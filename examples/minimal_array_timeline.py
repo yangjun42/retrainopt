@@ -23,6 +23,7 @@ def main() -> None:
         PrototypeModelAdapter(),
         config=PlannerConfig(
             n_choices=(0.5, 1.0),
+            initial_loss=1.0,
             time_cost_weight=0.0,
             loss_cost_weight=1.0,
             bayes_iterations=2,
@@ -33,10 +34,12 @@ def main() -> None:
     bayes_result = planner.plan(method="bayes")
 
     print("Exact")
-    print(exact_result.to_dict())
+    print([decision.action.value for decision in exact_result.decisions])
+    print(f"Measured objective: {exact_result.total_cost:.6f}")
     print()
     print("Bayes")
-    print(bayes_result.to_dict())
+    print([decision.action.value for decision in bayes_result.decisions])
+    print(f"Measured objective: {bayes_result.total_cost:.6f}")
 
 
 if __name__ == "__main__":
