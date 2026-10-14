@@ -115,8 +115,8 @@ python examples/botorch_timeline.py
 
 ## Citation
 
-If you use RetrainOpt in your research, please cite our
-[ECML PKDD paper](https://link.springer.com/chapter/10.1007/978-3-032-37654-1_14)
+If you use RetrainOpt in your research, please cite our paper in the
+[ECML PKDD 2026 proceedings](https://ecmlpkdd.org/2026/proceedings/)
 and report the software version you used. Citation metadata is available in
 [CITATION.cff](https://github.com/yangjun42/retrainopt/blob/main/CITATION.cff).
 
