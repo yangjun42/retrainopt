@@ -33,10 +33,15 @@ def run(policy_kind="base"):
 
     # Start deployment with the specified model. Historical candidate models
     # are tuning artifacts; they are not silently deployed by policy training.
+    accumulated = sum(
+        adapter.evaluate(initial_model, timeline.get_eval_block(step), step=step) - reference_loss
+        for step in range(3)
+    )
     controller = OnlineController(
         timeline, adapter, policy, config, start_step=3,
         initial_model=initial_model, initial_reference_loss=reference_loss,
         initial_trained_at=0,
+        initial_accumulated_staleness=accumulated,
     )
     for _ in range(3):
         result = controller.step()

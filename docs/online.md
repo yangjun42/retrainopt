@@ -34,7 +34,10 @@ three steps sequentially:
 An existing deployed model requires its measured `initial_reference_loss`.
 `initial_trained_at` records the timestep of its last retraining;
 `initial_accumulated_staleness` can carry previously observed staleness into
-the controller. It defaults to zero.
+the controller. When `start_step > initial_trained_at`, supply the signed
+staleness accumulated since that model's last retraining and before
+`start_step`, or intentionally reset this feature by leaving its default of
+zero. The controller does not reconstruct earlier observations automatically.
 
 As an alternative to supplying a model, `PlannerConfig.initial_loss` defines
 a synthetic constant-loss baseline until the controller first retrains. This
