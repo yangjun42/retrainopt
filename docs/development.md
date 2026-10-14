@@ -28,9 +28,15 @@ folder:
 RETRAINOPT_BUILD_DIR=$(mktemp -d)
 uv run --no-sync sphinx-build -W --keep-going -b html docs "$RETRAINOPT_BUILD_DIR/html"
 uv run --no-sync sphinx-build -W --keep-going -b doctest docs "$RETRAINOPT_BUILD_DIR/doctest"
-uv run --no-sync python -m build --no-isolation --outdir "$RETRAINOPT_BUILD_DIR/dist"
+SOURCE_DATE_EPOCH=$(git log -1 --format=%ct) uv run --locked --group build python scripts/build_release.py --outdir "$RETRAINOPT_BUILD_DIR/dist"
 uv run --no-sync python -m twine check "$RETRAINOPT_BUILD_DIR"/dist/*
 ```
+
+The build output directory must be empty or absent. The release script uses
+the locked build backend, builds the wheel from the source distribution, and
+normalizes source archive timestamps, owner IDs and permissions. CI builds
+twice with the same commit timestamp and requires identical wheel and source
+archive bytes before uploading the distributions.
 
 The documentation imports the installed package, not a manually inserted source
 path. Validate both the wheel and a wheel rebuilt from the source distribution
