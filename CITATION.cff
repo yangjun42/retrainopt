@@ -2,7 +2,7 @@ cff-version: 1.2.0
 message: "Please cite RetrainOpt and the paper describing its retraining algorithms."
 type: software
 title: RetrainOpt
-version: 0.3.1rc1
+version: 0.3.1
 authors:
   - family-names: Yang
     given-names: Jun
