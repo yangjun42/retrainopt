@@ -65,6 +65,9 @@ retrainopt = ["py.typed"]
 testpaths = ["tests"]
 
 # Reproducible CPU development/CI. Published extras remain accelerator-neutral.
+[tool.uv]
+required-environments = ["sys_platform == 'linux' and platform_machine == 'x86_64'"]
+
 [[tool.uv.index]]
 name = "pytorch-cpu"
 url = "https://download.pytorch.org/whl/cpu"
