@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=77", "wheel"]
+requires = ["setuptools>=77", "wheel>=0.45.1"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -39,7 +39,7 @@ botorch = [
 
 [dependency-groups]
 test = ["pytest>=8"]
-build = ["build>=1.2", "twine>=6", "setuptools>=77", "wheel"]
+build = ["build>=1.2", "twine>=6", "setuptools>=77", "wheel>=0.45.1"]
 docs = ["sphinx>=8", "myst-parser>=4", "furo>=2024.8.6"]
 
 [project.urls]

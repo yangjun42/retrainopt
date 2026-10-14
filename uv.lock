@@ -1633,7 +1633,7 @@ build = [
     { name = "build", specifier = ">=1.2" },
     { name = "setuptools", specifier = ">=77" },
     { name = "twine", specifier = ">=6" },
-    { name = "wheel" },
+    { name = "wheel", specifier = ">=0.45.1" },
 ]
 docs = [
     { name = "furo", specifier = ">=2024.8.6" },
