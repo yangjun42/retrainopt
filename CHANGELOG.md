@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.0 — 2026-10-15
 
 - Add `training_cost_fn` to offline planning, historical policy training and
   online execution. Custom costs replace weighted fit time and use the same
