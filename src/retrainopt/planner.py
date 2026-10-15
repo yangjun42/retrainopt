@@ -12,7 +12,7 @@ from .config import PlannerConfig
 from .core import AcquisitionManager, create_bayes_backend, evaluate_decision_sequence, solve_exact_schedule
 from .core.dp import StageCosts, solve_stage_schedule, validate_model_costs
 from .evaluation import EvaluationEngine
-from .interfaces import EvaluationProvider, ModelAdapter, TimelineDataset
+from .interfaces import EvaluationProvider, ModelAdapter, TimelineDataset, TrainingCostFunction
 from .types import ALGORITHM_VERSION, CandidateEvaluation, Decision, DecisionAction, METADATA_SCHEMA_VERSION, ModelId, PlanResult
 
 
@@ -26,6 +26,7 @@ class RetrainingPlanner:
         config: PlannerConfig | None = None,
         *,
         evaluator: EvaluationProvider | None = None,
+        training_cost_fn: TrainingCostFunction | None = None,
     ):
         self.timeline = timeline
         self.model_adapter = model_adapter
@@ -38,7 +39,12 @@ class RetrainingPlanner:
             raise ValueError("TimelineDataset.num_steps must be a positive integer.")
         if evaluator is not None and not isinstance(evaluator, EvaluationProvider):
             raise TypeError("evaluator must implement the EvaluationProvider protocol.")
-        self.engine = evaluator if evaluator is not None else EvaluationEngine(timeline, model_adapter, self.config)
+        if evaluator is not None and training_cost_fn is not None:
+            raise ValueError("evaluator and training_cost_fn are mutually exclusive; the evaluator supplies costs.")
+        self.engine = evaluator if evaluator is not None else EvaluationEngine(
+            timeline, model_adapter, self.config, training_cost_fn=training_cost_fn,
+        )
+        self._uses_fit_time_cost = evaluator is None and training_cost_fn is None
         self.acquisition = AcquisitionManager()
         self.acquisition.parse_name(self.config.acquisition)
         self.bayes_backend = create_bayes_backend(self.config.bayes_backend, config=self.config)
@@ -422,15 +428,13 @@ class RetrainingPlanner:
                 dataset_size,
             ):
                 future_losses[eval_step] = loss_mean
-            evaluation = CandidateEvaluation(
-                model_id=(step, n_value),
-                dataset_size=dataset_size,
-                training_seconds=training_mean / self.config.time_cost_weight if self.config.time_cost_weight else 0.0,
-                training_cost=training_mean,
-                future_losses=future_losses,
-                observed=False,
-            )
-            estimated_state_costs[(step, n_value)] = evaluation.to_state_cost()
+            # The surrogate predicts objective cost, not elapsed fit time.
+            estimated_state_costs[(step, n_value)] = {
+                "training_cost": training_mean,
+                "future_losses": future_losses,
+                "observed": False,
+                "metadata": {},
+            }
         return estimated_state_costs
 
     def _build_acquisition_state_costs(
@@ -500,7 +504,9 @@ class RetrainingPlanner:
         moments = self._valid_moments(
             surrogate.predict_training_cost(step, n_value, dataset_size), f"training cost for {(step, n_value)!r}",
         )
-        return moments if self.config.time_cost_weight else (0.0, 0.0)
+        if self._uses_fit_time_cost and self.config.time_cost_weight == 0:
+            return 0.0, 0.0
+        return moments
 
     def _predict_future_losses(
         self,

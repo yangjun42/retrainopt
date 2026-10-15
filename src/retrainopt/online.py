@@ -14,15 +14,16 @@ import time
 from typing import Any, Protocol, Sequence, runtime_checkable
 
 from .config import PlannerConfig
-from .evaluation import EvaluationEngine, _nonnegative_measurement
-from .interfaces import ModelAdapter, TimelineDataset
+from .evaluation import _nonnegative_measurement, _training_cost
+from .interfaces import ModelAdapter, TimelineDataset, TrainingCostFunction
 from .planner import RetrainingPlanner
-from .types import CandidateEvaluation, Decision, DecisionAction, PlanResult
+from .types import Decision, DecisionAction, PlanResult
 
 
-def _integer(value: Any, name: str, *, minimum: int = 0) -> int:
-    if isinstance(value, bool) or not isinstance(value, Integral) or value < minimum:
-        raise ValueError(f"{name} must be an integer >= {minimum}.")
+def _integer(value: Any, name: str, *, minimum: int | None = 0) -> int:
+    if isinstance(value, bool) or not isinstance(value, Integral) or (minimum is not None and value < minimum):
+        bound = "" if minimum is None else f" >= {minimum}"
+        raise ValueError(f"{name} must be an integer{bound}.")
     return int(value)
 
 
@@ -46,6 +47,7 @@ class OnlineState:
 
     Staleness is a raw loss difference and can be negative. Accumulated
     staleness includes the current timestep; elapsed time counts logical steps.
+    Model age may exceed ``step`` when it was trained before this timeline.
     """
 
     step: int
@@ -56,8 +58,6 @@ class OnlineState:
     def __post_init__(self) -> None:
         _integer(self.step, "step")
         _integer(self.time_since_last_retrain, "time_since_last_retrain")
-        if self.time_since_last_retrain > self.step:
-            raise ValueError("time_since_last_retrain cannot exceed step.")
         _finite(self.current_staleness, "current_staleness")
         _finite(self.accumulated_staleness, "accumulated_staleness")
 
@@ -259,7 +259,8 @@ class OnlineController:
     Supply either a real ``initial_model`` with ``initial_reference_loss`` or
     ``config.initial_loss`` for a synthetic constant-loss baseline. No initial
     model is implicitly trained. The initial model is treated as trained at
-    step zero unless ``initial_trained_at`` is supplied.
+    step zero unless ``initial_trained_at`` is supplied. A negative training
+    step denotes a model trained before the supplied timeline began.
 
     The timeline may grow between calls. ``step`` reads only the current train
     size/evaluation block, and samples training data only for RETRAIN. It never
@@ -280,15 +281,19 @@ class OnlineController:
         start_step: int = 0,
         initial_trained_at: int = 0,
         initial_accumulated_staleness: float = 0.0,
+        training_cost_fn: TrainingCostFunction | None = None,
     ):
         self.timeline = timeline
         self.model_adapter = model_adapter
         self.policy = policy
         self.config = copy.deepcopy(config) if config is not None else PlannerConfig()
+        if training_cost_fn is not None and not callable(training_cost_fn):
+            raise TypeError("training_cost_fn must be callable.")
+        self.training_cost_fn = training_cost_fn
         if not isinstance(policy, OnlinePolicy):
             raise TypeError("policy must implement OnlinePolicy.decide.")
         self._next_step = _integer(start_step, "start_step")
-        self._last_retrain_step = _integer(initial_trained_at, "initial_trained_at")
+        self._last_retrain_step = _integer(initial_trained_at, "initial_trained_at", minimum=None)
         if self._last_retrain_step > self._next_step:
             raise ValueError("initial_trained_at cannot be later than start_step.")
         self._accumulated_staleness = _finite(initial_accumulated_staleness, "initial_accumulated_staleness")
@@ -362,7 +367,10 @@ class OnlineController:
             started = time.perf_counter()
             model = self.model_adapter.fit(train_data, step=step, n_samples=n_samples, random_seed=seed)
             training_seconds = _nonnegative_measurement(time.perf_counter() - started, "Measured training time")
-            training_cost = _nonnegative_measurement(training_seconds * self.config.time_cost_weight, "Measured training cost")
+            training_cost = _training_cost(
+                self.training_cost_fn, step=step, n_samples=n_samples,
+                training_seconds=training_seconds, model=model, time_cost_weight=self.config.time_cost_weight,
+            )
             loss = _nonnegative_measurement(
                 self.model_adapter.evaluate(model, eval_data, step=step), f"Retrained model loss at step {step}"
             )
@@ -436,17 +444,6 @@ class _HistoryPrefix(TimelineDataset):
         return self._timeline.sample_train_block(step, n_samples, seed=seed)
 
 
-class _TuningEvaluator(EvaluationEngine):
-    """Keep the initial evaluation alongside the engine's candidate cache."""
-
-    initial_evaluation: CandidateEvaluation | None = None
-
-    def evaluate_initial_model(self, initial_model: Any | None = None) -> CandidateEvaluation:
-        evaluation = super().evaluate_initial_model(initial_model)
-        self.initial_evaluation = evaluation
-        return evaluation
-
-
 def collect_online_training_data(
     timeline: TimelineDataset,
     model_adapter: ModelAdapter,
@@ -456,6 +453,9 @@ def collect_online_training_data(
     method: str = "exact",
     initial_model: Any | None = None,
     initial_reference_loss: float | None = None,
+    initial_model_age: int = 0,
+    initial_accumulated_staleness: float = 0.0,
+    training_cost_fn: TrainingCostFunction | None = None,
 ) -> OnlineTrainingData:
     """Plan exclusively on ``[0, history_steps)`` and collect teacher rows.
 
@@ -470,6 +470,10 @@ def collect_online_training_data(
     offline planner, omitting an initial model and initial_loss bootstraps a
     model on step zero; its step-zero loss supplies the initial reference.
     An explicit model requires its measured ``initial_reference_loss``.
+    ``initial_model_age`` counts steps since its training at the window start;
+    ``initial_accumulated_staleness`` carries the signed sum before that start.
+    Nonzero carry requires an explicit model or a configured constant baseline.
+    All returned step indices remain local to the supplied timeline.
     """
     steps = _integer(history_steps, "history_steps", minimum=1)
     available = _integer(timeline.num_steps, "TimelineDataset.num_steps")
@@ -477,18 +481,20 @@ def collect_online_training_data(
         raise ValueError("history_steps cannot exceed the currently available timeline.")
     snapshot = copy.deepcopy(config) if config is not None else PlannerConfig()
     _validate_initial_baseline(snapshot, initial_model, initial_reference_loss, require_model=False)
+    age = _integer(initial_model_age, "initial_model_age")
+    accumulated = _finite(initial_accumulated_staleness, "initial_accumulated_staleness")
+    if initial_model is None and snapshot.initial_loss is None and (age != 0 or accumulated != 0.0):
+        raise ValueError("Nonzero initial history requires an initial_model or initial_loss; bootstrap starts at step zero.")
     prefix = _HistoryPrefix(timeline, steps)
-    evaluator = _TuningEvaluator(prefix, model_adapter, snapshot)
-    planner = RetrainingPlanner(prefix, model_adapter, snapshot, evaluator=evaluator)
+    planner = RetrainingPlanner(prefix, model_adapter, snapshot, training_cost_fn=training_cost_fn)
     plan = planner.plan(method, initial_model=initial_model)
-    initial = evaluator.initial_evaluation
+    initial = planner.engine._last_initial_evaluation
     if initial is None:
         raise RuntimeError("The historical planner did not evaluate its initial model.")
     current = initial
     reference = float(initial_reference_loss) if initial_reference_loss is not None else initial.future_losses[0]
-    last_retrain_step = 0
-    accumulated = 0.0
-    candidates = {evaluation.model_id: evaluation for evaluation in evaluator.iter_cached_candidates()}
+    last_retrain_step = -age
+    candidates = {evaluation.model_id: evaluation for evaluation in planner.engine.iter_cached_candidates()}
     states = []
     for step, decision in enumerate(plan.decisions):
         staleness = current.future_losses[step] - reference

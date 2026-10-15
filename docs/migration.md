@@ -1,5 +1,33 @@
 # Migration guide
 
+## From 0.3.1 to 0.4.0
+
+The default evaluator retains its wall-clock training costs and zero initial
+history defaults. New optional arguments support custom costs and models that
+predate a historical window:
+
+- Pass `training_cost_fn` to the planner, evaluation engine, historical helper,
+  or online controller. Its return value is already in final objective units
+  and replaces `time_cost_weight * training_seconds`; it is not multiplied by
+  the time weight again. A planner cannot accept both this callback and an
+  explicit `evaluator`.
+- Set `initial_model_age` and `initial_accumulated_staleness` on
+  `collect_online_training_data` to carry pre-window history. Supply the
+  model's original reference loss. Local step numbers stay unchanged; model
+  age may exceed the step number. Implicit bootstrap rejects nonzero carry.
+- `OnlineController.initial_trained_at` now accepts negative integers for a
+  model trained before the supplied timeline starts. The accumulated value
+  covers observations before `start_step`; the controller adds the current
+  observation before deciding.
+
+Approximate search now preserves costs from an injected evaluator when
+`time_cost_weight=0`. Previously, it incorrectly zeroed the training-cost
+predictions for unobserved candidates. Plans using that combination can change.
+
+Keep callback units and feature initialization consistent between historical
+tuning and deployment. See {ref}`costs <custom-training-costs>` and
+[online retraining](online.md) for examples and retry semantics.
+
 ## From 0.3.0 to 0.3.1
 
 The planning and online policy APIs are unchanged. This patch rejects malformed

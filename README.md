@@ -85,6 +85,8 @@ at a time, using the current model's measured loss and executing the policy's
 decision. Supply the initial deployed model and its reference loss explicitly;
 policy training does not deploy a historical candidate model automatically.
 Current loss measurements require labels for the evaluation observations.
+Custom training-cost functions and pre-window model history are supported in
+historical tuning and deployment.
 
 ```shell
 python examples/online_timeline.py

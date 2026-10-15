@@ -35,7 +35,7 @@ fixed seeds alone do not make it deterministic.
 | `CandidateEvaluation.training_seconds` | Raw seconds measured for a candidate's fit. |
 | `CandidateEvaluation.training_cost` | Training cost in objective units; the default is `time_cost_weight * training_seconds`. |
 | `CandidateEvaluation.future_losses[t]` | Raw modeling loss at evaluation time `t`. |
-| `PlanResult.training_cost` | Sum of selected retraining actions' weighted training costs. |
+| `PlanResult.training_cost` | Sum of selected retraining actions' costs in objective units. |
 | `PlanResult.loss_cost` | Sum of selected models' raw losses over the timeline. |
 | `PlanResult.weighted_loss_cost` | `loss_cost_weight * loss_cost`. |
 | `PlanResult.total_cost` | `training_cost + weighted_loss_cost`. |
@@ -45,6 +45,57 @@ trains all candidates; approximate search trains a subset and may perform
 extra fits when measuring the final schedule or collecting diagnostic history.
 `record_bayes_true_history=True` can add substantial diagnostic work. There is
 no guarantee that a small candidate-selection setting caps total fit time.
+
+(custom-training-costs)=
+## Custom training costs
+
+Pass `training_cost_fn` to `RetrainingPlanner`, `EvaluationEngine`,
+`collect_online_training_data`, or `OnlineController` to change training-cost
+accounting while retaining the built-in fitting and loss evaluation. The
+`TrainingCostFunction` protocol accepts these keyword arguments:
+
+```python
+def training_cost_fn(*, step, n_samples, training_seconds, model) -> float:
+    ...
+```
+
+Return a finite, nonnegative number in **final objective units**. This replaces
+`time_cost_weight * training_seconds`; the time weight is not applied again.
+`loss_cost_weight` still applies to raw losses. With no callback, the existing
+wall-clock calculation remains the default. For example, a fixed cost per
+sample can make a small experiment independent of timing noise:
+
+```{doctest}
+>>> from retrainopt import PlannerConfig, RetrainingPlanner
+>>> from retrainopt.adapters import ArrayTimelineAdapter, PrototypeModelAdapter
+>>> def sample_cost(*, step, n_samples, training_seconds, model):
+...     return 0.125 * n_samples
+>>> rows = [((0.0,), 0), ((1.0,), 1)]
+>>> timeline = ArrayTimelineAdapter([rows], [rows])
+>>> config = PlannerConfig(n_choices=(1.0,), initial_loss=1.0,
+...                        time_cost_weight=999.0, loss_cost_weight=2.0)
+>>> result = RetrainingPlanner(timeline, PrototypeModelAdapter(), config,
+...                            training_cost_fn=sample_cost).plan("exact")
+>>> (result.training_cost, result.weighted_loss_cost, result.total_cost)
+(0.25, 0.0, 0.25)
+```
+
+The callback receives the artifact returned by `fit`, so it may read energy or
+billing measurements stored by the adapter. It must not mutate that artifact.
+It receives no timeline or future evaluation data. Historical tuning and
+deployment should use the same cost definition; callbacks must not read future
+data through external state or depend on the previously deployed model. The
+offline recurrence assumes a candidate's training cost is independent of that
+previous model.
+
+The callback runs after a new candidate fit. Returning a cached evaluation does
+not call it again; additional diagnostic fits can. KEEP decisions and initial
+models, including compatibility bootstrap fits, have zero training cost and do
+not invoke it. `training_seconds` continues to report fit wall-clock seconds,
+whatever units the callback returns. A callback failure or invalid return value
+raises an error; online controller state is committed only after the whole step
+succeeds. Applications are responsible for any external callback side effects
+when retrying.
 
 ## Custom evaluators
 
@@ -58,6 +109,9 @@ planner = RetrainingPlanner(
 )
 ```
 
+An explicit `evaluator` and `training_cost_fn` are mutually exclusive: a custom
+provider already supplies the final training cost.
+
 The provider exposes:
 
 ```python
@@ -70,7 +124,7 @@ iter_cached_candidates() -> Iterable[CandidateEvaluation]
 The initial record has ID `(-1, 0)`, zero training cost, and losses for the
 entire timeline. A candidate `(s, n)` has losses for every timestep from `s`
 through the end. Losses and measured costs must be finite and nonnegative.
-The provider returns weighted training cost and raw losses;
+The provider returns training cost in final objective units and raw losses;
 RetrainOpt applies the loss weight. `iter_cached_candidates()` lists observed
 candidate records, excluding the initial model. The uncached method supports
 diagnostics without adding a new observation to the search cache.
@@ -89,8 +143,9 @@ evaluation engine is needed.
 ## Lifetime and errors
 
 A planner uses a configuration snapshot and a cache scoped to that planner.
-Treat the timeline, adapter, initial-model semantics, and custom provider as
-unchanged during its lifetime. Create a new planner for a different experiment.
+Treat the timeline, adapter, initial-model semantics, cost function, and custom
+provider as unchanged during its lifetime. Create a new planner for a different
+experiment.
 This in-memory cache is not a persistent cross-experiment result store.
 
 Serialized results use `schema_version=2`; metadata uses
