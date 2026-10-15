@@ -32,7 +32,8 @@ def main() -> None:
         assert not Path(retrainopt.__file__).resolve().is_relative_to(args.source_root.resolve())
     assert importlib.resources.files("retrainopt").joinpath("py.typed").is_file()
     distribution = importlib.metadata.distribution("retrainopt")
-    assert any(str(path).endswith("licenses/LICENSE") for path in distribution.files)
+    for filename in ("LICENSE", "NOTICE"):
+        assert any(str(path).endswith(f"licenses/{filename}") for path in distribution.files)
     assert distribution.metadata["License-Expression"] == "Apache-2.0"
     blocks = [[((0.0,), 0), ((1.0,), 1)], [((0.2,), 0), ((0.8,), 1)]]
     timeline = ArrayTimelineAdapter(train_blocks=blocks * 2, eval_blocks=blocks * 2)

@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Add project copyright and research affiliation in `NOTICE`, include it in
+  distributions, and clarify license attribution and academic citation guidance.
+
 ## 0.3.1 — 2026-10-14
 
 ### Correctness and validation
