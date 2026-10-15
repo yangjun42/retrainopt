@@ -20,7 +20,7 @@ def _nonnegative_measurement(value: Any, name: str) -> float:
 
 
 class EvaluationEngine:
-    """Train and evaluate candidate retraining choices without disk side effects."""
+    """Train and evaluate candidates with an in-memory result cache."""
 
     def __init__(self, timeline: TimelineDataset, model_adapter: ModelAdapter, config: PlannerConfig):
         if isinstance(timeline.num_steps, bool) or not isinstance(timeline.num_steps, Integral) or timeline.num_steps <= 0:
@@ -34,8 +34,8 @@ class EvaluationEngine:
     def evaluate_initial_model(self, initial_model: Any | None = None) -> CandidateEvaluation:
         """Evaluate the initial deployed model.
 
-        If no model artifact is supplied, RetrainOpt synthesizes the initial
-        model by training on the first timestep using either the configured
+        Use a supplied model or the configured constant ``initial_loss``.
+        If neither is supplied, train on the first timestep using
         ``initial_model_samples`` or the full first train block.
         """
         if self.config.initial_loss is not None:

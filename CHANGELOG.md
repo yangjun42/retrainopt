@@ -2,8 +2,12 @@
 
 ## Unreleased
 
-- Add project copyright and research affiliation in `NOTICE`, include it in
-  distributions, and clarify license attribution and academic citation guidance.
+- Make copyright attribution explicit in `LICENSE` and clarify academic
+  citation guidance.
+- Consolidate publishing instructions in the development guide and remove the
+  redundant `setup.py` entry point.
+- Simplify the README and remove unrelated design comparisons from the
+  algorithm documentation.
 
 ## 0.3.1 — 2026-10-14
 

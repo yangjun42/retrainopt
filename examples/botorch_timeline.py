@@ -1,7 +1,4 @@
-"""Tiny GP-guided search. Install retrainopt[botorch] first.
-
-This demonstrates the backend; it is not a paper-reproduction experiment.
-"""
+"""GP-guided search example. Install retrainopt[botorch] first."""
 
 from retrainopt import PlannerConfig, RetrainingPlanner
 from retrainopt.adapters import ArrayTimelineAdapter, PrototypeModelAdapter

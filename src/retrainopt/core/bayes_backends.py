@@ -233,7 +233,7 @@ class _BoTorchFittedSurrogate(BaseFittedSurrogate):
 
 
 class BoTorchBayesBackend(BaseBayesBackend):
-    """Optional GP-based backend implemented entirely inside RetrainOpt."""
+    """Optional Gaussian-process surrogate backend using BoTorch."""
 
     name = "botorch"
 

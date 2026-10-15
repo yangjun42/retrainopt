@@ -16,7 +16,7 @@ on the first `H` timesteps and produces an `OnlineTrainingData` object:
 The helper only reads that historical prefix. Keep deployment steps outside
 the prefix, then create an `OnlineController` with `start_step=H`. Each call to
 `step()` observes the current timestep and executes one decision. The helper
-does not return candidate models or silently select a model for deployment;
+does not return candidate models or select a model for deployment;
 the controller's initial model is an explicit choice.
 
 Historical tuning follows the offline planner's initial-baseline rules. If

@@ -1,7 +1,6 @@
 # Quick start
 
-Python 3.10 or later is required. The core package has no mandatory third-party
-runtime dependencies.
+Requires Python 3.10 or later. The core package has no external dependencies.
 
 ```shell
 python -m pip install retrainopt
@@ -12,7 +11,7 @@ that time. Blocks are not accumulated automatically: supply cumulative blocks
 yourself if that is the intended experiment. Each evaluation block describes
 the data on which that time's modeling loss is measured.
 
-This example uses a constant initial loss, so no model is silently trained
+This example uses a constant initial loss, so no model is trained
 before planning. Setting the training-time weight to zero makes the objective
 independent of wall-clock timing in this tiny demonstration.
 

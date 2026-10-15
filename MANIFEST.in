@@ -1,12 +1,5 @@
-include LICENSE
-include NOTICE
-include README.md
-include CHANGELOG.md
-include CITATION.cff
-include PUBLISHING.md
-include RELEASE_CHECKLIST.md
+include CHANGELOG.md CITATION.cff uv.lock
 recursive-include docs *.md *.py
-include uv.lock
 recursive-include scripts *.py
 recursive-include examples *.py
 recursive-include tests *.py

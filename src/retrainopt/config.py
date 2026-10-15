@@ -26,8 +26,9 @@ class PlannerConfig:
     loss_cost_weight: float = 1.0
     random_seed: int = 42
 
-    # If ``None``, the planner synthesizes the initial model by training on the
-    # first timestep with ``initial_model_samples`` or the full first block.
+    # If unset and no initial model is supplied, the offline planner fits on
+    # timestep zero using initial_model_samples or the full first block.
+    # The online controller requires an explicit model or loss baseline.
     initial_loss: Optional[float] = None
     initial_model_samples: Optional[int] = None
 
