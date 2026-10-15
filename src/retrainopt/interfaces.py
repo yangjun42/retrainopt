@@ -60,6 +60,22 @@ class ModelAdapter(ABC):
         """Evaluate a model artifact and return a scalar loss."""
 
 
+class TrainingCostFunction(Protocol):
+    """Price a completed fit in objective units.
+
+    Return a finite nonnegative cost. This replaces the default weighted
+    fit time; ``time_cost_weight`` is not applied again. ``n_samples`` is the
+    actual requested fit size after clipping to available data. ``model`` is
+    the artifact returned by ``fit`` and may carry resource measurements.
+
+    Do not mutate the artifact or depend on earlier model choices. A failed
+    step may retry the fit and this callback. KEEP actions and initial-model
+    setup do not call it; cached candidates reuse their recorded cost.
+    """
+
+    def __call__(self, *, step: int, n_samples: int, training_seconds: float, model: Any) -> float: ...
+
+
 @runtime_checkable
 class EvaluationProvider(Protocol):
     """Cost evaluation seam for custom measurement or persistent caching.

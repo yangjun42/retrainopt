@@ -9,7 +9,7 @@ from typing import Any, Dict, Iterable, Optional
 
 from .config import PlannerConfig
 from .core.costs import compute_training_cost
-from .interfaces import ModelAdapter, TimelineDataset
+from .interfaces import ModelAdapter, TimelineDataset, TrainingCostFunction
 from .types import CandidateEvaluation, ModelId
 
 
@@ -19,17 +19,44 @@ def _nonnegative_measurement(value: Any, name: str) -> float:
     return float(value)
 
 
+def _training_cost(
+    cost_fn: TrainingCostFunction | None,
+    *,
+    step: int,
+    n_samples: int,
+    training_seconds: float,
+    model: Any,
+    time_cost_weight: float,
+) -> float:
+    if cost_fn is None:
+        cost = compute_training_cost(training_seconds, time_cost_weight)
+    else:
+        cost = cost_fn(step=step, n_samples=n_samples, training_seconds=training_seconds, model=model)
+    return _nonnegative_measurement(cost, "Training cost")
+
+
 class EvaluationEngine:
     """Train and evaluate candidates with an in-memory result cache."""
 
-    def __init__(self, timeline: TimelineDataset, model_adapter: ModelAdapter, config: PlannerConfig):
+    def __init__(
+        self,
+        timeline: TimelineDataset,
+        model_adapter: ModelAdapter,
+        config: PlannerConfig,
+        *,
+        training_cost_fn: TrainingCostFunction | None = None,
+    ):
+        if training_cost_fn is not None and not callable(training_cost_fn):
+            raise TypeError("training_cost_fn must be callable.")
         if isinstance(timeline.num_steps, bool) or not isinstance(timeline.num_steps, Integral) or timeline.num_steps <= 0:
             raise ValueError("TimelineDataset must contain at least one timestep.")
         self.timeline = timeline
         self.model_adapter = model_adapter
         self.config = config
+        self.training_cost_fn = training_cost_fn
         self._candidate_cache: Dict[ModelId, CandidateEvaluation] = {}
         self._initial_cache: Optional[CandidateEvaluation] = None
+        self._last_initial_evaluation: CandidateEvaluation | None = None
 
     def evaluate_initial_model(self, initial_model: Any | None = None) -> CandidateEvaluation:
         """Evaluate the initial deployed model.
@@ -50,8 +77,10 @@ class EvaluationEngine:
             for step in range(self.timeline.num_steps):
                 self._eval_block(step)
             self._initial_cache = evaluation
+            self._last_initial_evaluation = evaluation
             return evaluation
         if self._initial_cache is not None and initial_model is None:
+            self._last_initial_evaluation = self._initial_cache
             return self._initial_cache
 
         if initial_model is None:
@@ -96,6 +125,7 @@ class EvaluationEngine:
         )
         if source == "trained_on_step0":
             self._initial_cache = evaluation
+        self._last_initial_evaluation = evaluation
         return evaluation
 
     def evaluate_candidate(self, step: int, n_samples: int) -> CandidateEvaluation:
@@ -136,8 +166,9 @@ class EvaluationEngine:
             random_seed=self.config.random_seed + step * 1009 + actual_n,
         )
         training_seconds = _nonnegative_measurement(time.perf_counter() - start_time, "Measured training time")
-        training_cost = _nonnegative_measurement(
-            compute_training_cost(training_seconds, self.config.time_cost_weight), "Measured training cost"
+        training_cost = _training_cost(
+            self.training_cost_fn, step=step, n_samples=actual_n,
+            training_seconds=training_seconds, model=model, time_cost_weight=self.config.time_cost_weight,
         )
 
         future_losses = {}

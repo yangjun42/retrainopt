@@ -5,6 +5,12 @@ Underscore-prefixed helpers and internal DP cost tables may change between
 releases. Use evaluator injection instead of replacing a planner's internal
 engine or calling its private table builders.
 
+Use `training_cost_fn` to customize only candidate training cost; use
+`EvaluationProvider` to supply complete candidate evaluations. These options
+are mutually exclusive on `RetrainingPlanner`. See
+{ref}`cost accounting <custom-training-costs>` and
+{ref}`historical state initialization <online-history>`.
+
 ```{eval-rst}
 .. autoclass:: retrainopt.PlannerConfig
    :members:
@@ -47,6 +53,12 @@ engine or calling its private table builders.
 
 .. autoclass:: retrainopt.EvaluationProvider
    :members:
+
+.. autoclass:: retrainopt.TrainingCostFunction
+   :members: __call__
+
+.. autoclass:: retrainopt.evaluation.EvaluationEngine
+   :members: evaluate_initial_model, evaluate_candidate, evaluate_candidate_uncached, iter_cached_candidates
 
 .. autoclass:: retrainopt.TimelineDataset
    :members:

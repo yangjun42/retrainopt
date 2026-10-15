@@ -14,7 +14,7 @@ Core interfaces:
 from importlib.metadata import version
 
 from .config import PlannerConfig
-from .interfaces import EvaluationProvider, ModelAdapter, TimelineDataset
+from .interfaces import EvaluationProvider, ModelAdapter, TimelineDataset, TrainingCostFunction
 from .planner import RetrainingPlanner
 from .online import (
     BaseOnlinePolicy,
@@ -47,5 +47,6 @@ __all__ = [
     "PlanResult",
     "RetrainingPlanner",
     "TimelineDataset",
+    "TrainingCostFunction",
     "collect_online_training_data",
 ]

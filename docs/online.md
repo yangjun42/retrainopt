@@ -4,6 +4,7 @@ The Base and Learned policies make sequential retraining decisions using
 observed history. They implement the online strategies described in
 [*Automated Retraining for Cost-Optimal ML*](https://link.springer.com/chapter/10.1007/978-3-032-37654-1_14).
 
+(online-history)=
 ## Train on history, then deploy
 
 `collect_online_training_data(..., history_steps=H)` runs the offline planner
@@ -24,12 +25,33 @@ both `initial_model` and `config.initial_loss` are omitted, the helper fits a
 bootstrap model on the first historical step and uses its loss there as the
 reference. The deployment controller does not perform this implicit fit.
 
-The historical helper uses timestep zero as the initial model's training time
-and starts accumulated staleness at zero. It has no arguments for carrying a
-model's age or accumulated staleness from before that historical window.
-Supplying `initial_reference_loss` changes the loss reference, not this clock
-or accumulated history. This limits its use for tuning on a moving historical
-window; deployment resumption supports explicit carry as described below.
+To tune on a later historical window, supply that window as the timeline and
+set `initial_model_age` to the model's age at its first step. Pass
+`initial_accumulated_staleness` for the signed sum observed since the last
+retraining and **before** this window. Both default to zero. For example:
+
+```python
+history = collect_online_training_data(
+    historical_window, model_adapter, config,
+    history_steps=3,
+    initial_model=existing_model,
+    initial_reference_loss=0.2,
+    initial_model_age=5,
+    initial_accumulated_staleness=0.7,
+)
+```
+
+The reference is this model's loss measured at its training time, not its loss
+at the start of the window. If its first current loss is `0.1`, the first
+pre-action features are approximately `(-0.1, 0.6, 5)`. Carry changes the
+training features, not the offline objective. An implicit bootstrap creates a
+new model, so it rejects nonzero age or accumulated staleness.
+
+The helper still reads only `[0, history_steps)` of the supplied timeline, and
+states and decisions retain those local step numbers. Age can exceed the local
+step number. Window slicing is the caller's responsibility; renumbering steps
+changes the sampling seeds, so a sliced run need not draw the same samples as
+an unsliced run.
 
 This example calibrates Base on three historical steps and processes the next
 three steps sequentially:
@@ -44,12 +66,15 @@ An existing deployed model requires its measured `initial_reference_loss`.
 the controller. When `start_step > initial_trained_at`, supply the signed
 staleness accumulated since that model's last retraining and before
 `start_step`, or intentionally reset this feature by leaving its default of
-zero. The controller does not reconstruct earlier observations automatically.
+zero. Negative `initial_trained_at` values represent training before the
+supplied timeline starts: `start_step=0, initial_trained_at=-5` gives initial
+age five. The controller does not reconstruct earlier observations automatically.
 
 As an alternative to supplying a model, `PlannerConfig.initial_loss` defines
 a synthetic constant-loss baseline until the controller first retrains. This
-baseline is useful for controlled examples; it is not a fitted model. An
-explicit model and `initial_loss` are mutually exclusive.
+baseline is useful for controlled examples; it is not a fitted model. It also
+accepts explicit initial age and accumulated staleness. An explicit model and
+`initial_loss` are mutually exclusive.
 
 ## Base policy
 
@@ -92,31 +117,34 @@ model improves relative to its reference loss; it is not clipped to zero.
 
 Current staleness is the raw loss difference $L_t(m)-L_{\mathrm{reference}}(m)$.
 Accumulated staleness adds these signed differences since the last retraining.
-Loss weights affect the measured objective, not these policy features. The
-controller keeps the current model when fewer than `config.min_train_size`
+The library uses raw loss for these features; loss weights affect the measured
+objective only. The controller keeps the current model when fewer than `config.min_train_size`
 training samples are available.
 
 `OnlineStepResult.state` contains the features before the action, including
 the current observation in accumulated staleness. The remaining fields record
-the executed decision, raw loss, training time, weighted training cost,
+the executed decision, raw loss, training time, training cost in objective units,
 weighted loss cost and their sum `total_cost`. After a successful retraining,
 the new model's current loss becomes its reference loss and accumulated
 staleness resets for the next timestep.
 
-The online controller and historical training helper use fit wall-clock time
-multiplied by `time_cost_weight` as their training cost. They do not expose a
-custom training-cost evaluator for energy, monetary or other measurements.
-Sampling, evaluation and policy inference time are excluded from this
-objective. A retraining request below
+By default, the online controller and historical training helper use fit
+wall-clock time multiplied by `time_cost_weight` as training cost. Both accept
+`training_cost_fn` to return a custom cost in final objective units, replacing
+that calculation. Use the same callback for tuning and deployment; see
+{ref}`Custom training costs <custom-training-costs>` for its signature,
+units, caching and failure contract. KEEP has zero training cost. Fit timing
+excludes sampling, evaluation and policy inference; those expenses are also
+excluded from the default objective. A retraining request below
 `config.min_train_size` is rejected when enough data are available; an
 undersized prediction is not silently expanded.
 
 Applications can implement `OnlinePolicy.decide(state, *, train_size)` to
 return a `Decision`. This method must not mutate policy or deployment state.
-Model fitting must return a new artifact, and evaluation must not mutate the
-deployed model. The controller advances only after a successful step; an
-unavailable timestep raises `IndexError` and can be retried when the timeline
-grows.
+Model fitting must return a new artifact, and evaluation and cost callbacks
+must not mutate model artifacts. The controller advances only after a
+successful step; an unavailable timestep raises `IndexError` and can be retried
+when the timeline grows.
 
 The Learned policy uses staleness derived from the current model's observed
 predictive loss. The Base policy itself needs only elapsed time and the

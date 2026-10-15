@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Add `training_cost_fn` to offline planning, historical policy training and
+  online execution. Custom costs replace weighted fit time and use the same
+  objective units in all three paths.
+- Preserve custom training-cost predictions in approximate search even when
+  `time_cost_weight=0`, including costs supplied by an external evaluator.
+- Allow historical policy training to start with a model's existing age and
+  signed accumulated staleness. Deployment can also start with a model trained
+  before the supplied timeline.
+- Validate cost callbacks and initial history, and test cost accounting,
+  failure retries, bounded data access and state continuity across windows.
 - Make copyright attribution explicit in `LICENSE` and clarify academic
   citation guidance.
 - Consolidate publishing instructions in the development guide and remove the
