@@ -113,12 +113,26 @@ python examples/torch_timeline.py
 python examples/botorch_timeline.py
 ```
 
+## License and attribution
+
+RetrainOpt is licensed under the
+[Apache License 2.0](https://github.com/yangjun42/retrainopt/blob/main/LICENSE).
+Project attribution is recorded in
+[NOTICE](https://github.com/yangjun42/retrainopt/blob/main/NOTICE).
+
+When redistributing RetrainOpt or derivatives, follow
+[Section 4 of the license](https://www.apache.org/licenses/LICENSE-2.0):
+provide the license, prominently mark modified files, preserve applicable
+copyright, patent, trademark and attribution notices in distributed source,
+and retain relevant `NOTICE` attributions.
+
 ## Citation
 
 If you use RetrainOpt in your research, please cite our paper in the
 [ECML PKDD 2026 proceedings](https://ecmlpkdd.org/2026/proceedings/)
 and report the software version you used. Citation metadata is available in
 [CITATION.cff](https://github.com/yangjun42/retrainopt/blob/main/CITATION.cff).
+Academic citation is appreciated; it is not an additional license condition.
 
 ```bibtex
 @inproceedings{yang2027automated,
@@ -136,5 +150,5 @@ and report the software version you used. Citation metadata is available in
 }
 ```
 
-Apache-2.0 licensed. Source and issues:
+Source and issues:
 [github.com/yangjun42/retrainopt](https://github.com/yangjun42/retrainopt).
