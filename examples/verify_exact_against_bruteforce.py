@@ -12,7 +12,7 @@ from retrainopt.adapters import ArrayTimelineAdapter, PrototypeModelAdapter
 
 
 class TableEvaluator:
-    """Minimal EvaluationProvider backed by a measured cost table."""
+    """Minimal EvaluationProvider backed by a fixed cost table."""
 
     def __init__(self) -> None:
         self.initial = CandidateEvaluation(

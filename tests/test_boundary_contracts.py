@@ -1,4 +1,4 @@
-"""Boundary, reproducibility, and adapter contracts for the public release."""
+"""Boundary, reproducibility, and adapter contracts."""
 
 from dataclasses import FrozenInstanceError
 import importlib.util

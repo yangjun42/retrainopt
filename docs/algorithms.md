@@ -49,7 +49,7 @@ sample fraction. Loss features also include evaluation step and model age.
 With only one observed row, the BoTorch regressor uses that target as a constant
 mean with zero standard deviation instead of fitting a GP. The planner clips
 negative predicted cost and loss means to zero without changing their standard
-deviations; these are engineering conventions, not additional paper guarantees.
+deviations.
 
 The default `sequence` selection follows an acquisition-minimizing DP schedule.
 Initialization measures every configured sample count at each anchor step,
@@ -61,11 +61,9 @@ search. `bayes_candidates_per_iteration` is a minimum target, not a hard
 evaluation budget. Sequence selection can propose more, and measuring the final
 selected schedule can require additional candidates.
 
-To study the paper's random-design/GP/sequence formulation explicitly, use
+For GP surrogates with random initialization and sequence selection, use
 `bayes_backend="botorch"`, `bayes_anchor_steps=()`, and
-`bayes_selection_strategy="sequence"`. This still retains the library's
-documented supplementation behavior and does not reproduce the published
-experiments numerically by itself.
+`bayes_selection_strategy="sequence"`. Candidate supplementation still applies.
 
 ## Acquisition operates on a complete stage
 
@@ -101,22 +99,7 @@ $\xi$ has the same units as a stage cost.
 
 Measured stage costs have zero uncertainty: Expected/LCB/UCB return the
 measured cost, while Variance returns zero. EI and PI return zero at zero
-standard deviation, following the paper's explicit convention. Changing from
-0.1 to 0.2 can therefore change approximate candidate selection and plans.
+standard deviation, following the paper's explicit convention.
 
-## Library scope
-
-The package provides exact and approximate offline planning, model and data
-adapters, and the Base and Learned online policies. The offline planner can
-use a full timeline; online policies make sequential decisions from observed
-history. Neither online strategy guarantees the globally optimal deployment
-schedule. See [Online retraining](online.md) for their inputs and assumptions.
-
-Zephon's separation of curriculum and execution and Modyn's separation of
-policy, selection and evaluation are useful engineering precedents. RetrainOpt
-uses ordinary in-process interfaces; neither project is a dependency. See
-[Zephon's architecture](https://github.com/datologyai/zephon#how-it-works) and
-[Modyn's extension interfaces](https://github.com/eth-easl/modyn/blob/main/docs/TECHNICAL.md#coding).
-Their distributed execution and orchestration features are outside this
-library's scope.
+For the Base and Learned online policies, see [Online retraining](online.md).
 

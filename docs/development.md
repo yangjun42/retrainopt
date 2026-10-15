@@ -1,8 +1,10 @@
 # Development and validation
 
-Dependency declarations live in `pyproject.toml`; `uv.lock` records the
-reproducible development/CI environment. Runtime extras (`sklearn`, `torch`,
-`botorch`) are separate from development groups (`test`, `build`, `docs`).
+`pyproject.toml` declares package metadata, dependencies and the setuptools
+build backend used by standard tools such as pip, uv and `python -m build`;
+`uv.lock` records the reproducible development/CI environment.
+Runtime extras (`sklearn`, `torch`, `botorch`) are separate from development
+groups (`test`, `build`, `docs`).
 CI pins uv 0.13.1. The Linux lock uses CPU PyTorch wheels; published extras do
 not force a particular accelerator wheel index.
 
@@ -23,8 +25,7 @@ Do not infer dependencies from an existing virtual environment.
 
 ## Documentation and distributions
 
-Build generated files outside the checkout when it lives in a synchronized
-folder:
+Build the documentation and release distributions in a temporary directory:
 
 ```shell
 RETRAINOPT_BUILD_DIR=$(mktemp -d)
@@ -94,25 +95,68 @@ The JSON report records the installed package path/version, reproduction
 commit, artifact namespace and both objectives. This checks API compatibility;
 it does not establish numerical reproduction of published experiments.
 
-## Runtime and artifacts
+## Publishing
 
-Keep virtual environments, package caches, builds and scratch output outside
-synchronized source trees, using a machine-local runtime/cache or a local
-checkout. Follow workspace runtime configuration when present. The repository
-contains source, dependency declarations, tests, documentation and small
-examples; it does not require downloading benchmark datasets or generating
-large model artifacts for its release checks.
+Publishing uses GitHub Actions and PyPI Trusted Publishing (OIDC). Before the
+first release, the account owner must configure:
 
-Release artifacts are the wheel, source distribution and their checksums, built
-from the release tag. Retain those together with the workflow result. Generated
-HTML is published separately by the documentation workflow. Publication is
-complete only when index installation and the corresponding release checks
-succeed; a local build alone is not a published release.
+- TestPyPI and PyPI project `retrainopt` (or a pending publisher), repository
+  `yangjun42/retrainopt`, workflow `publish.yml`, and GitHub environments
+  `testpypi` and `pypi`, respectively. Names must match exactly.
+- Those GitHub environments and their protection rules, restricting production
+  publishing to reviewed release tags; the repository workflows must be enabled.
+- GitHub Pages with GitHub Actions as its source and the `github-pages`
+  environment for documentation deployment.
 
-## Citation
+The workflow does not create these accounts or require a `PYPI_API_TOKEN`.
+Keep Trusted Publishing as the upload route.
 
-`CITATION.cff` records the software and
-[*Automated Retraining for Cost-Optimal ML*](https://link.springer.com/chapter/10.1007/978-3-032-37654-1_14)
-by Jun Yang and Michael Mathioudakis. Use Springer's publication metadata for
-paper citations: ECML PKDD 2026, proceedings year 2027, volume 16941,
-pages 231–249. The README includes a BibTeX entry.
+1. Prepare an `X.Y.ZrcN` candidate in `pyproject.toml`, align `CITATION.cff`,
+   refresh `uv.lock` as needed, and review the changelog and migration notes.
+   Complete the locked validation and distribution checks above. Keep the
+   paper reproduction pin and frozen artifacts unchanged. Commit the
+   reviewed changes, then tag that revision with its exact package version:
+
+   ```shell
+   VERSION=$(uv version --short)
+   git tag -a "v$VERSION" -m "RetrainOpt $VERSION"
+   git push origin "v$VERSION"
+   ```
+
+2. Follow the `Publish` workflow. It accepts only `vX.Y.ZrcN` or `vX.Y.Z` tags
+   matching `pyproject.toml`, and reruns the full reusable validation workflow
+   on that tagged revision. Candidates use TestPyPI/environment `testpypi`;
+   stable versions use PyPI/environment `pypi`.
+3. Confirm upload and verification succeeded. The workflow verifies
+   `SHA256SUMS`, uploads the validated wheel and source distribution, then
+   installs the exact version anonymously with `--no-cache --no-deps` in a
+   clean environment. `scripts/verify_index.py` compares index digests with
+   those artifacts; `scripts/installed_smoke.py` runs outside the checkout.
+   Only then does it create the GitHub release or prerelease with both
+   distributions and checksums. Retain these with the workflow result.
+4. After candidate verification, update package/citation metadata to `X.Y.Z`,
+   refresh the lock as needed, and merge the reviewed final changes into
+   `main`. Repeat the tag commands from that revision. Stable tags must point
+   to a commit reachable from `origin/main`; the final artifacts undergo the
+   same validation and public-index installation checks.
+
+For an additional manual core-only installation check, set `VERSION` to the
+published version and run in a clean environment outside the source checkout:
+
+```shell
+RETRAINOPT_VERIFY_DIR=$(mktemp -d)
+uv venv "$RETRAINOPT_VERIFY_DIR/venv"
+uv pip install --no-cache --no-deps --python "$RETRAINOPT_VERIFY_DIR/venv/bin/python" \
+  --index-url https://test.pypi.org/simple/ "retrainopt==$VERSION"
+(cd "$RETRAINOPT_VERIFY_DIR" && ./venv/bin/python -I -c 'import retrainopt; print(retrainopt.__version__)')
+```
+
+Use `https://pypi.org/simple/` for a stable release. Optional integration
+dependencies belong in the normal locked validation environment, not TestPyPI.
+Documentation deploys separately on a `main` push or a manual documentation
+workflow dispatch targeting `main`; uploading a release does not deploy it.
+
+If configuration or any check fails, preserve the run and artifacts, fix the
+cause, and report publication as incomplete. A local build or green pull
+request alone is not a release. Index versions cannot be overwritten: changed
+artifacts require a new version, never moving an already published tag.

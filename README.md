@@ -11,7 +11,7 @@ by Jun Yang and Michael Mathioudakis (ECML PKDD 2026).
 
 ## Install
 
-Python 3.10 or later. The core has no mandatory third-party runtime dependencies.
+Requires Python 3.10 or later. The core package has no external dependencies.
 
 ```shell
 python -m pip install retrainopt
@@ -74,13 +74,13 @@ for cost accounting and search budgets.
 
 ## Online retraining
 
-The Base and Learned policies use an observed historical prefix to guide
-subsequent retraining decisions. Base derives a retraining interval and sample
+The Base and Learned policies use an initial period of historical data to guide
+later retraining decisions. Base derives a retraining interval and sample
 count from a historical plan. Learned fits a classifier for keep/retrain and
 a regressor for the retraining sample count; it requires the `sklearn` extra.
 
 `collect_online_training_data(..., history_steps=...)` limits policy training
-to that prefix. `OnlineController.step()` then processes one deployment step
+to that period. `OnlineController.step()` then processes one deployment step
 at a time, using the current model's measured loss and executing the policy's
 decision. Supply the initial deployed model and its reference loss explicitly;
 policy training does not deploy a historical candidate model automatically.
@@ -102,7 +102,7 @@ strategy guarantees the globally optimal deployment schedule.
 - [Initial models, costs and evaluator injection](https://yangjun42.github.io/retrainopt/evaluation.html)
 - [Optional adapters and CLI](https://yangjun42.github.io/retrainopt/integrations.html), [API](https://yangjun42.github.io/retrainopt/api.html)
 - [Migration guide](https://yangjun42.github.io/retrainopt/migration.html), [changelog](https://github.com/yangjun42/retrainopt/blob/main/CHANGELOG.md)
-- [Development and validation](https://yangjun42.github.io/retrainopt/development.html), [publishing](https://github.com/yangjun42/retrainopt/blob/main/PUBLISHING.md)
+- [Development and validation](https://yangjun42.github.io/retrainopt/development.html), [publishing](https://yangjun42.github.io/retrainopt/development.html#publishing)
 
 ```shell
 python examples/minimal_array_timeline.py
@@ -113,18 +113,11 @@ python examples/torch_timeline.py
 python examples/botorch_timeline.py
 ```
 
-## License and attribution
+## License
 
 RetrainOpt is licensed under the
 [Apache License 2.0](https://github.com/yangjun42/retrainopt/blob/main/LICENSE).
-Project attribution is recorded in
-[NOTICE](https://github.com/yangjun42/retrainopt/blob/main/NOTICE).
-
-When redistributing RetrainOpt or derivatives, follow
-[Section 4 of the license](https://www.apache.org/licenses/LICENSE-2.0):
-provide the license, prominently mark modified files, preserve applicable
-copyright, patent, trademark and attribution notices in distributed source,
-and retain relevant `NOTICE` attributions.
+Copyright (c) 2026 Jun Yang and Michael Mathioudakis.
 
 ## Citation
 
@@ -132,7 +125,6 @@ If you use RetrainOpt in your research, please cite our paper in the
 [ECML PKDD 2026 proceedings](https://ecmlpkdd.org/2026/proceedings/)
 and report the software version you used. Citation metadata is available in
 [CITATION.cff](https://github.com/yangjun42/retrainopt/blob/main/CITATION.cff).
-Academic citation is appreciated; it is not an additional license condition.
 
 ```bibtex
 @inproceedings{yang2027automated,
@@ -149,6 +141,3 @@ Academic citation is appreciated; it is not an additional license condition.
   url = {https://doi.org/10.1007/978-3-032-37654-1_14}
 }
 ```
-
-Source and issues:
-[github.com/yangjun42/retrainopt](https://github.com/yangjun42/retrainopt).

@@ -17,7 +17,7 @@ def run(policy_kind="base"):
     adapter = PrototypeModelAdapter()
     config = PlannerConfig(n_choices=(1.0,), time_cost_weight=0.0)
 
-    # An existing deployed model and its measured reference loss are explicit.
+    # Fit an initial model and measure its reference loss.
     initial_model = adapter.fit(stable, step=0, n_samples=2, random_seed=42)
     reference_loss = adapter.evaluate(initial_model, stable, step=0)
     history = collect_online_training_data(
@@ -31,8 +31,7 @@ def run(policy_kind="base"):
     else:
         policy = BaseOnlinePolicy.from_plan(history.plan)
 
-    # Start deployment with the specified model. Historical candidate models
-    # are tuning artifacts; they are not silently deployed by policy training.
+    # Deploy the initial model; policy training does not deploy historical candidates.
     accumulated = sum(
         adapter.evaluate(initial_model, timeline.get_eval_block(step), step=step) - reference_loss
         for step in range(3)

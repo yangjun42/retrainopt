@@ -1,13 +1,13 @@
 """RetrainOpt public package.
 
 RetrainOpt provides cost-aware retraining planning for time-sliced datasets.
-The public API is intentionally small:
+Core interfaces:
 
 - ``TimelineDataset`` describes the retraining timeline.
 - ``ModelAdapter`` abstracts model fitting and evaluation.
 - ``PlannerConfig`` controls the search space and planning objective.
 - ``RetrainingPlanner`` produces retraining decision sequences.
-- ``collect_online_training_data`` tunes on a bounded historical prefix.
+- ``collect_online_training_data`` collects a historical plan and policy training rows.
 - ``OnlineController`` deploys Base or Learned policies on current data.
 """
 

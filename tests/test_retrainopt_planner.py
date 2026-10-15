@@ -1,4 +1,4 @@
-"""Unit tests for the new RetrainOpt public planner API."""
+"""Unit tests for the RetrainOpt public planner API."""
 
 from __future__ import annotations
 

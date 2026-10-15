@@ -95,12 +95,11 @@ This in-memory cache is not a persistent cross-experiment result store.
 
 Serialized results use `schema_version=2`; metadata uses
 `metadata_schema_version=1` and `algorithm_version="0.2"`. The algorithm version
-identifies semantics, rather than the installed package's release candidate
-suffix. Approximate runs record
+identifies cost and acquisition semantics independently of the package version.
+Approximate runs record
 `acquisition_semantics="complete_stage_independent_posteriors"`.
 
 Invalid input or a failed fit/evaluation raises an error. Do not encode a
 failed training run as a zero loss, an empty successful result, or an arbitrary
-cost. A batch experiment runner may catch a specific exception and record that
-run as failed; it should preserve the cause and experiment identity.
+cost.
 

@@ -1,4 +1,4 @@
-"""Example smoke tests for the standalone RetrainOpt repository."""
+"""Smoke tests for the examples."""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-"""Run the paper's Learned policy; requires retrainopt[sklearn]."""
+"""Run LearnedOnlinePolicy; requires retrainopt[sklearn]."""
 
 from online_timeline import run
 
