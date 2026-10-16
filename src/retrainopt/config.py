@@ -85,6 +85,11 @@ class PlannerConfig:
         object.__setattr__(self, "bayes_anchor_steps", anchors)
         if not isinstance(self.bayes_backend_options, dict):
             raise ValueError("bayes_backend_options must be a dictionary.")
+        if self.bayes_backend_options:
+            raise ValueError(
+                "bayes_backend_options does not support any options yet; "
+                "leave it empty and use the explicit PlannerConfig fields."
+            )
         object.__setattr__(self, "bayes_backend_options", copy.deepcopy(self.bayes_backend_options))
 
     def resolve_n_choices(self, dataset_size: int) -> List[int]:

@@ -1,5 +1,24 @@
 # Migration guide
 
+## From 0.4.1 to 0.4.2
+
+For sklearn classification, pass the task's known class labels with
+`SklearnModelAdapter(estimator, classes=(0, 1))` when a candidate sample may
+omit a class. The adapter aligns probability columns to this declared class
+space. Declare it from the task specification or available training history,
+not future evaluation labels. Estimators that require multiple training
+classes still need a suitable training sample. Without `classes`, evaluation
+rejects a one-class probability model or labels outside the fitted class set
+consistently across supported sklearn versions.
+
+Nonempty `bayes_backend_options` now raise `ValueError`: neither built-in
+backend implemented these options. Remove the dictionary and use the explicit
+`PlannerConfig` fields. The default empty dictionary remains accepted.
+
+For Torch, `device="cuda"` now resolves to the current CUDA device before
+training. Random-state protection and seeding follow that same device;
+explicit device strings such as `"cuda:1"` retain their meaning.
+
 ## From 0.4.0 to 0.4.1
 
 The public APIs are unchanged. After measuring the approximate planner's final

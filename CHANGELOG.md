@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.4.2 — 2026-10-16
+
+- Support a declared class space in the sklearn adapter so probability outputs
+  from candidates missing a class can be scored consistently. Reject unknown
+  evaluation classes explicitly when no class space is supplied.
+- Resolve implicit CUDA devices before training so model placement, seeding and
+  random-state restoration use the same device.
+- Reject unsupported nonempty `bayes_backend_options` instead of silently
+  ignoring them.
+- Use separate training and evaluation samples in the online examples,
+  including the initial model's reference loss.
+
 ## 0.4.1 — 2026-10-16
 
 - Restore each Torch module's original training/evaluation mode after evaluation,

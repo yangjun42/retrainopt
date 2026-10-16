@@ -360,15 +360,24 @@ class PlannerBoundaryContracts(unittest.TestCase):
             planner.plan(initial_model=object())
 
     def test_config_snapshot_isolated_from_mutation(self):
-        options = {"nested": [1]}
+        options = {}
         config = PlannerConfig(n_choices=[1], bayes_backend_options=options)
         planner = RetrainingPlanner(timeline(1), NoTraining(), config)
-        config.bayes_backend_options["nested"].append(2)
-        options["nested"].append(3)
-        self.assertEqual(planner.config.bayes_backend_options["nested"], [1])
+        config.bayes_backend_options["noise"] = 0.01
+        options["kernel"] = "matern"
+        self.assertEqual(planner.config.bayes_backend_options, {})
         self.assertEqual(planner.config.n_choices, (1,))
         with self.assertRaises(FrozenInstanceError):
             config.loss_cost_weight = 5
+
+    def test_planner_rejects_backend_options_added_after_config_creation(self):
+        for backend in ("lightweight", "botorch"):
+            config = PlannerConfig(bayes_backend=backend)
+            config.bayes_backend_options["noise"] = 0.01
+            with self.subTest(backend=backend), self.assertRaisesRegex(
+                ValueError, "bayes_backend_options.*leave it empty"
+            ):
+                RetrainingPlanner(timeline(1), NoTraining(), config)
 
 
 if __name__ == "__main__":

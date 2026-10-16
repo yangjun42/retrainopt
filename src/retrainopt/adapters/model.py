@@ -41,13 +41,22 @@ class SklearnModelAdapter(ModelAdapter):
 
     Finite integer-valued real labels, such as ``1.0``, are also accepted.
     Fractional labels, booleans and strings are rejected rather than coerced.
+    ``classes`` declares the task's complete class space before evaluation.
+    Missing fitted classes receive zero probability when computing log loss.
     """
 
-    def __init__(self, model_factory: Callable[[], Any] | Any):
+    def __init__(self, model_factory: Callable[[], Any] | Any, *, classes: Sequence[int] | None = None):
         self.model_factory = model_factory
+        self.classes = None
+        if classes is not None:
+            normalized = tuple(_class_label(label) for label in classes)
+            if len(normalized) < 2 or len(set(normalized)) != len(normalized):
+                raise ValueError("classes must contain at least two distinct class labels without duplicates.")
+            self.classes = tuple(sorted(normalized))
 
     def fit(self, train_data: Any, *, step: int, n_samples: int, random_seed: int) -> Any:
         features, labels = _split_labeled_block(train_data)
+        self._check_classes(labels, self.classes, context="Training")
         estimator = self._build_estimator()
         if hasattr(estimator, "get_params"):
             seed_params = {
@@ -57,7 +66,16 @@ class SklearnModelAdapter(ModelAdapter):
             }
             if seed_params:
                 estimator.set_params(**seed_params)
-        estimator.fit(features, labels)
+        try:
+            estimator.fit(features, labels)
+        except ValueError as exc:
+            if len(set(labels)) != 1:
+                raise
+            raise ValueError(
+                f"Sklearn fit failed for a single-class training candidate at step={step}, n_samples={n_samples}. "
+                "If the estimator requires multiple classes, adjust the training candidates or timeline sampling. "
+                f"Original error: {exc}"
+            ) from exc
         return estimator
 
     def evaluate(self, model: Any, eval_data: Any, *, step: int) -> float:
@@ -69,12 +87,41 @@ class SklearnModelAdapter(ModelAdapter):
         features, labels = _split_labeled_block(eval_data)
         if not features:
             raise ValueError("Evaluation data must not be empty.")
+        self._check_classes(labels, self.classes, context="Evaluation")
         if hasattr(model, "predict_proba"):
-            probabilities = model.predict_proba(features)
-            return float(log_loss(labels, probabilities, labels=list(model.classes_)))
+            import numpy as np
+
+            model_classes = tuple(_class_label(label) for label in model.classes_)
+            if not model_classes or len(set(model_classes)) != len(model_classes):
+                raise ValueError("model.classes_ must contain distinct class labels.")
+            classes = self.classes if self.classes is not None else tuple(sorted(model_classes))
+            if len(classes) < 2:
+                raise ValueError("A single-class model requires an explicit classes argument with the full task class space.")
+            self._check_classes(model_classes, classes, context="Model")
+            self._check_classes(labels, classes, context="Evaluation")
+            probabilities = np.asarray(model.predict_proba(features))
+            if probabilities.shape != (len(features), len(model_classes)):
+                raise ValueError("predict_proba must return one row per sample and one column per model class.")
+            if not np.issubdtype(probabilities.dtype, np.floating):
+                probabilities = probabilities.astype(float)
+            aligned = np.zeros((len(features), len(classes)), dtype=probabilities.dtype)
+            class_columns = {label: index for index, label in enumerate(classes)}
+            for column, label in enumerate(model_classes):
+                aligned[:, class_columns[label]] = probabilities[:, column]
+            return float(log_loss(labels, aligned, labels=list(classes)))
         predictions = model.predict(features)
         mistakes = sum(int(prediction != label) for prediction, label in zip(predictions, labels))
         return mistakes / max(1, len(labels))
+
+    @staticmethod
+    def _check_classes(labels: Sequence[int], classes: Sequence[int] | None, *, context: str) -> None:
+        if classes is not None:
+            unknown = sorted(set(labels) - set(classes))
+            if unknown:
+                raise ValueError(
+                    f"{context} labels {unknown} are outside the class space {list(classes)}. "
+                    "Declare the complete task classes before fitting or evaluating."
+                )
 
     def _build_estimator(self) -> Any:
         try:
@@ -213,7 +260,7 @@ class TorchModelAdapter(ModelAdapter):
         except ImportError as exc:  # pragma: no cover - optional dependency
             raise RuntimeError("TorchModelAdapter requires the `torch` extra.") from exc
 
-        device = torch.device(self.device)
+        device = self._resolve_device(torch)
         device_type = device.type if device.type in {"cuda", "mps"} else "cuda"
         devices = []
         if device.type in {"cuda", "mps"}:
@@ -225,7 +272,7 @@ class TorchModelAdapter(ModelAdapter):
                     torch.cuda.manual_seed(random_seed)
             elif device.type == "mps":
                 torch.mps.manual_seed(random_seed)
-            model = self.model_factory().to(self.device)
+            model = self.model_factory().to(device)
             optimizer = (
                 self.optimizer_factory(model.parameters())
                 if self.optimizer_factory is not None
@@ -238,8 +285,8 @@ class TorchModelAdapter(ModelAdapter):
             model.train()
             for _ in range(self.epochs):
                 for inputs, targets in train_loader:
-                    inputs = inputs.to(self.device)
-                    targets = targets.to(self.device)
+                    inputs = inputs.to(device)
+                    targets = targets.to(device)
                     optimizer.zero_grad()
                     outputs = model(inputs)
                     loss = criterion(outputs, targets)
@@ -259,6 +306,7 @@ class TorchModelAdapter(ModelAdapter):
         except ImportError as exc:  # pragma: no cover - optional dependency
             raise RuntimeError("TorchModelAdapter requires the `torch` extra.") from exc
 
+        device = self._resolve_device(torch)
         loader = DataLoader(eval_data, batch_size=self.batch_size, shuffle=False, generator=torch.Generator().manual_seed(0))
         criterion = torch.nn.CrossEntropyLoss()
         training_modes = [(module, module.training) for module in model.modules()]
@@ -269,8 +317,8 @@ class TorchModelAdapter(ModelAdapter):
 
             with torch.no_grad():
                 for inputs, targets in loader:
-                    inputs = inputs.to(self.device)
-                    targets = targets.to(self.device)
+                    inputs = inputs.to(device)
+                    targets = targets.to(device)
                     outputs = model(inputs)
                     loss = criterion(outputs, targets)
                     total_loss += float(loss.item()) * int(inputs.size(0))
@@ -283,3 +331,9 @@ class TorchModelAdapter(ModelAdapter):
             # Restore each flag directly: train() would overwrite child modes.
             for module, training in training_modes:
                 module.training = training
+
+    def _resolve_device(self, torch: Any) -> Any:
+        device = torch.device(self.device)
+        if device.type == "cuda" and device.index is None:
+            device = torch.device("cuda", torch.cuda.current_device())
+        return device

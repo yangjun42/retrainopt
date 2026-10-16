@@ -54,7 +54,10 @@ changes the sampling seeds, so a sliced run need not draw the same samples as
 an unsliced run.
 
 This example calibrates Base on three historical steps and processes the next
-three steps sequentially:
+three steps sequentially. Training and evaluation use disjoint toy samples;
+the initial model's reference loss is also measured on evaluation samples.
+The same initial model is supplied to calibration and deployment. This small
+example demonstrates the API, not an estimate of real-world performance:
 
 ```{literalinclude} ../examples/online_timeline.py
 :language: python

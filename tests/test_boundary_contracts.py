@@ -59,14 +59,26 @@ class ConfigContracts(unittest.TestCase):
 
     def test_config_snapshots_sequences_and_is_frozen(self):
         choices = [0.5]
-        options = {"nested": [1]}
+        options = {}
         config = PlannerConfig(n_choices=choices, bayes_backend_options=options)
         choices.append(1.0)
-        options["nested"].append(2)
+        options["noise"] = 0.01
         self.assertEqual(config.n_choices, (0.5,))
-        self.assertEqual(config.bayes_backend_options, {"nested": [1]})
+        self.assertEqual(config.bayes_backend_options, {})
         with self.assertRaises(FrozenInstanceError):
             config.time_cost_weight = 5
+
+    def test_backend_options_cannot_be_silently_ignored(self):
+        for backend in ("lightweight", "botorch"):
+            for options in ({"noise": 0.01}, {"kernel": "matern"}, {"unknown": None}):
+                with self.subTest(backend=backend, options=options), self.assertRaisesRegex(
+                    ValueError, "bayes_backend_options.*leave it empty"
+                ):
+                    PlannerConfig(bayes_backend=backend, bayes_backend_options=options)
+            config = PlannerConfig(bayes_backend=backend, bayes_backend_options={})
+            self.assertEqual(config.bayes_backend_options, {})
+        with self.assertRaisesRegex(ValueError, "must be a dictionary"):
+            PlannerConfig(bayes_backend_options=[])
 
     def test_cli_preserves_count_and_fraction_types(self):
         args = build_parser().parse_args(["plan", "--dataset-dir", ".", "--n-choice", "1", "--n-choice", "1.0"])
