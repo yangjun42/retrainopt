@@ -226,6 +226,94 @@ class TorchContracts(unittest.TestCase):
         adapter.evaluate(first, data, step=0)
         self.assertTrue(torch.equal(before, torch.random.get_rng_state()))
 
+    def test_evaluation_uses_eval_mode_and_restores_each_module_mode(self):
+        import torch
+        from retrainopt.adapters import TorchModelAdapter
+
+        data = torch.utils.data.TensorDataset(torch.tensor([[0.0, 1.0], [1.0, 0.0]]), torch.tensor([0, 1]))
+        adapter = TorchModelAdapter(lambda: None, batch_size=2)
+        for mode in ("train", "eval", "mixed"):
+            with self.subTest(mode=mode):
+                model = torch.nn.Sequential(torch.nn.BatchNorm1d(2), torch.nn.Dropout(0.75), torch.nn.Linear(2, 2))
+                model.train(mode != "eval")
+                if mode == "mixed":
+                    model[0].eval()
+                modes = tuple(module.training for module in model.modules())
+                values = {name: value.clone() for name, value in model.state_dict().items()}
+                observed = []
+                model.register_forward_pre_hook(
+                    lambda module, inputs: observed.append(
+                        (tuple(child.training for child in module.modules()), torch.is_grad_enabled())
+                    )
+                )
+
+                first = adapter.evaluate(model, data, step=0)
+                second = adapter.evaluate(model, data, step=0)
+
+                self.assertTrue(math.isfinite(first))
+                self.assertEqual(first, second)
+                self.assertEqual(observed, [((False,) * len(modes), False)] * 2)
+                self.assertEqual(tuple(module.training for module in model.modules()), modes)
+                for name, value in model.state_dict().items():
+                    self.assertTrue(torch.equal(value, values[name]), name)
+
+    def test_failed_evaluation_restores_mixed_module_modes(self):
+        import torch
+        from retrainopt.adapters import TorchModelAdapter
+
+        data = torch.utils.data.TensorDataset(torch.tensor([[0.0, 1.0], [1.0, 0.0]]), torch.tensor([0, 1]))
+        adapter = TorchModelAdapter(lambda: None, batch_size=2)
+        original = RuntimeError("forward failed")
+
+        def fail_after_forward(module, inputs, output):
+            raise original
+
+        for failure in ("forward", "empty"):
+            with self.subTest(failure=failure):
+                model = torch.nn.Sequential(torch.nn.BatchNorm1d(2), torch.nn.Dropout(0.75), torch.nn.Linear(2, 2))
+                model[0].eval()
+                modes = tuple(module.training for module in model.modules())
+                values = {name: value.clone() for name, value in model.state_dict().items()}
+                if failure == "forward":
+                    model.register_forward_hook(fail_after_forward)
+                with self.assertRaises(RuntimeError if failure == "forward" else ValueError) as raised:
+                    adapter.evaluate(model, data if failure == "forward" else [], step=0)
+                if failure == "forward":
+                    self.assertIs(raised.exception, original)
+                self.assertEqual(tuple(module.training for module in model.modules()), modes)
+                for name, value in model.state_dict().items():
+                    self.assertTrue(torch.equal(value, values[name]), name)
+
+    def test_failed_policy_preserves_deployed_torch_model_and_controller_state(self):
+        import torch
+        from retrainopt import OnlineController
+        from retrainopt.adapters import TorchModelAdapter, TorchTimelineAdapter
+
+        original = RuntimeError("policy failed")
+
+        class FailingPolicy:
+            def decide(self, state, *, train_size):
+                raise original
+
+        data = torch.utils.data.TensorDataset(torch.tensor([[0.0, 1.0], [1.0, 0.0]]), torch.tensor([0, 1]))
+        model = torch.nn.Sequential(torch.nn.BatchNorm1d(2), torch.nn.Dropout(0.75), torch.nn.Linear(2, 2))
+        model[0].eval()
+        modes = tuple(module.training for module in model.modules())
+        controller = OnlineController(
+            TorchTimelineAdapter([data], [data]), TorchModelAdapter(lambda: None, batch_size=2), FailingPolicy(),
+            initial_model=model, initial_reference_loss=0.5,
+            initial_trained_at=-3, initial_accumulated_staleness=-0.25,
+        )
+        with self.assertRaises(RuntimeError) as raised:
+            controller.step()
+        self.assertIs(raised.exception, original)
+        self.assertIs(controller.current_model, model)
+        self.assertEqual(tuple(module.training for module in model.modules()), modes)
+        self.assertEqual(
+            (controller.next_step, controller.reference_loss, controller.last_retrain_step, controller.accumulated_staleness),
+            (0, 0.5, -3, -0.25),
+        )
+
 
 @unittest.skipUnless(importlib.util.find_spec("botorch"), "BoTorch is optional")
 class BoTorchContracts(unittest.TestCase):

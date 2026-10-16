@@ -6,6 +6,9 @@ RetrainOpt helps you choose **when to retrain** and **how much data to use**,
 balancing model quality against training cost. Plan a schedule from historical
 data, or make retraining decisions as new data arrives.
 
+[Try the interactive demo](https://yangjun42.github.io/retrainopt/_static/demo/index.html)
+to see how changing training costs and data drift changes a retraining schedule.
+
 Based on [*Automated Retraining for Cost-Optimal ML*](https://link.springer.com/chapter/10.1007/978-3-032-37654-1_14)
 by Jun Yang and Michael Mathioudakis (ECML PKDD 2026).
 
@@ -67,8 +70,9 @@ plan's cost is not an independent future-performance estimate.
 | `bayes`, `lightweight` backend | Uses a dependency-free nearest-neighbor heuristic to select candidates. |
 | `bayes`, `botorch` backend | Uses optional Gaussian-process surrogates for acquisition-guided search. |
 
-For `bayes`, `estimated_total_cost` is the surrogate estimate, while
-`total_cost` is measured for the selected schedule. Approximate search does not
+For `bayes`, the final schedule is reoptimized over all measured candidates.
+`estimated_total_cost` is its estimate before the final measurements, while
+`total_cost` is its measured cost. Approximate search does not
 guarantee the global optimum. See the [algorithm guide](https://yangjun42.github.io/retrainopt/algorithms.html)
 for cost accounting and search budgets.
 

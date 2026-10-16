@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.4.1 — 2026-10-16
+
+- Restore each Torch module's original training/evaluation mode after evaluation,
+  including mixed module modes and exceptions.
+- Reoptimize the final approximate schedule over all measured candidates after
+  final measurement, without starting another round of candidate training.
+  Report the returned schedule's cost and its estimate consistently.
+- Document controller recovery, including the transition from a synthetic
+  initial baseline to a trained model.
+- Add an interactive demo with synthetic cost tables and schedules generated
+  by the package's exact planner, alongside fixed retraining baselines.
+
 ## 0.4.0 — 2026-10-15
 
 - Add `training_cost_fn` to offline planning, historical policy training and

@@ -261,19 +261,25 @@ class TorchModelAdapter(ModelAdapter):
 
         loader = DataLoader(eval_data, batch_size=self.batch_size, shuffle=False, generator=torch.Generator().manual_seed(0))
         criterion = torch.nn.CrossEntropyLoss()
-        model.eval()
-        total_loss = 0.0
-        total_count = 0
+        training_modes = [(module, module.training) for module in model.modules()]
+        try:
+            model.eval()
+            total_loss = 0.0
+            total_count = 0
 
-        with torch.no_grad():
-            for inputs, targets in loader:
-                inputs = inputs.to(self.device)
-                targets = targets.to(self.device)
-                outputs = model(inputs)
-                loss = criterion(outputs, targets)
-                total_loss += float(loss.item()) * int(inputs.size(0))
-                total_count += int(inputs.size(0))
+            with torch.no_grad():
+                for inputs, targets in loader:
+                    inputs = inputs.to(self.device)
+                    targets = targets.to(self.device)
+                    outputs = model(inputs)
+                    loss = criterion(outputs, targets)
+                    total_loss += float(loss.item()) * int(inputs.size(0))
+                    total_count += int(inputs.size(0))
 
-        if total_count <= 0:
-            raise ValueError("Evaluation data must not be empty.")
-        return total_loss / total_count
+            if total_count <= 0:
+                raise ValueError("Evaluation data must not be empty.")
+            return total_loss / total_count
+        finally:
+            # Restore each flag directly: train() would overwrite child modes.
+            for module, training in training_modes:
+                module.training = training

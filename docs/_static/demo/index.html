@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Explore when to retrain and how much data to use with RetrainOpt's interactive scheduling example.">
+  <title>Try a retraining schedule · RetrainOpt</title>
+  <link rel="stylesheet" href="demo.css">
+  <script src="demo.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#results">Skip to results</a>
+  <header class="site-header">
+    <a class="brand" href="../../index.html"><span class="brand-mark" aria-hidden="true">↻</span> RetrainOpt</a>
+    <nav aria-label="Main"><a href="../../demo.html">How it works</a><a href="https://github.com/yangjun42/retrainopt">Code <span aria-hidden="true">↗</span></a></nav>
+  </header>
+  <main>
+    <div class="hero">
+      <p class="eyebrow">Interactive scheduling example</p>
+      <h1>Retrain at the right time.<br><span>Choose how much data to use.</span></h1>
+      <p class="intro">More training can improve a model, but it comes at a cost. Change the priorities and explore how the schedule responds.</p>
+      <p class="provenance"><span aria-hidden="true">●</span> Synthetic inputs · Exact offline planning · <span id="version">RetrainOpt</span></p>
+    </div>
+
+    <div class="workspace">
+      <aside class="controls" aria-labelledby="controls-heading">
+        <h2 id="controls-heading">Make the trade-off</h2>
+        <label for="scenario">How the stream changes</label>
+        <select id="scenario" disabled><option>Loading scenarios…</option></select>
+        <p id="scenario-description" class="control-description"></p>
+        <div class="slider-heading"><label for="quality">Cost of prediction errors</label><output id="quality-value" for="quality">—</output></div>
+        <input id="quality" type="range" min="0" max="4" step="1" value="2" disabled>
+        <div class="range-labels"><span>Lower priority</span><span>Higher priority</span></div>
+        <div class="slider-heading"><label for="training">Price of retraining</label><output id="training-value" for="training">—</output></div>
+        <input id="training" type="range" min="0" max="3" step="1" value="1" disabled>
+        <div class="range-labels"><span>Cheaper</span><span>More expensive</span></div>
+        <p class="preset-label">Try a starting point</p>
+        <div class="presets" aria-label="Preset settings">
+          <button type="button" data-quality="2" data-training="1" disabled>Balanced</button>
+          <button type="button" data-quality="4" data-training="0" disabled>Quality first</button>
+          <button type="button" data-quality="0" data-training="3" disabled>Costly training</button>
+        </div>
+        <div class="objective"><strong>What is being minimized?</strong><p>Training cost + quality weight × total loss</p><small>All values use arbitrary demo units. The initial model is already available.</small></div>
+      </aside>
+
+      <div id="results" class="results" tabindex="-1">
+        <p id="status" class="status" role="status" aria-live="polite">Loading precomputed schedules…</p>
+        <div id="cards" class="cards"></div>
+        <section class="panel" aria-labelledby="timeline-heading">
+          <div class="panel-heading"><div><p class="eyebrow">When + how much</p><h2 id="timeline-heading">Every bar is a retraining decision</h2></div><span class="chart-key">Taller bar = more data</span></div>
+          <p id="schedule-summary" class="panel-description"></p>
+          <div class="chart-scroll" tabindex="0" role="region" aria-label="Retraining timeline, scroll horizontally on small screens"><svg id="timeline" viewBox="0 0 780 270" role="img" aria-label="Retraining schedule for each policy"></svg></div>
+          <p class="chart-note">The optimized plan can use 25%, 50%, 75% or 100% of available data. The three fixed policies use 100% whenever they retrain.</p>
+        </section>
+        <div class="chart-pair">
+          <section class="panel" aria-labelledby="stream-heading">
+            <div class="panel-heading"><div><p class="eyebrow">The setting</p><h2 id="stream-heading">A changing stream</h2></div></div>
+            <svg id="stream" viewBox="0 0 430 220" role="img" aria-label="Synthetic regime across 24 time steps"></svg>
+            <p class="chart-note">A toy regime value. Moving away from the model's training regime increases its loss.</p>
+          </section>
+          <section class="panel" aria-labelledby="cost-heading">
+            <div class="panel-heading"><div><p class="eyebrow">The trade-off</p><h2 id="cost-heading">Where the cost comes from</h2></div></div>
+            <svg id="breakdown" viewBox="0 0 430 220" role="img" aria-label="Training and weighted prediction loss costs"></svg>
+            <div class="legend"><span><i class="train-swatch"></i>Training</span><span><i class="loss-swatch"></i>Weighted loss</span></div>
+          </section>
+        </div>
+        <details class="panel details">
+          <summary>Inspect the numbers and assumptions</summary>
+          <div class="table-scroll"><table><caption>Costs in arbitrary demo units; lower total cost is better.</caption><thead><tr><th scope="col">Policy</th><th scope="col">Training</th><th scope="col">Raw loss</th><th scope="col">Weighted loss</th><th scope="col">Total</th><th scope="col">Retrains</th><th scope="col">Samples used</th></tr></thead><tbody id="numbers"></tbody></table></div>
+          <p>These schedules are generated by the real <code>RetrainingPlanner(...).plan("exact")</code> using supplied synthetic costs. The optimizer sees all 24 steps in advance and minimizes the objective over the configured sample choices. This illustrates the decision problem; it is not a measured performance benchmark or a forecast.</p>
+          <p>Every policy starts with the same full-data model. “Every 6 steps” has a fixed interval, not an interval selected after seeing the results. No model is fitted for this demo; the loss and training-price formulas are documented in <a href="../../demo.html">how it works</a>.</p>
+        </details>
+        <section class="next-step"><div><h2>Try it with your own timeline</h2><p>Supply training and evaluation blocks, choose your cost model, and inspect the resulting plan.</p></div><a class="primary-link" href="../../quickstart.html">Python quick start <span aria-hidden="true">→</span></a></section>
+      </div>
+    </div>
+    <footer><span>Reproduce this example with <code>python examples/build_demo.py --check</code>.</span><a href="https://github.com/yangjun42/retrainopt/blob/main/examples/build_demo.py">View the generator</a></footer>
+  </main>
+  <noscript><p class="noscript">This interactive example needs JavaScript. The <a href="../../demo.html">demo guide</a> explains the cost model and how to generate the schedules with Python.</p></noscript>
+</body>
+</html>

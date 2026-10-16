@@ -301,7 +301,7 @@ class OnlinePaperContracts(unittest.TestCase):
     def test_bayes_teacher_uses_measured_selected_candidates_outside_initial_design(self):
         model = TableModel({
             "initial": {0: 0.2, 1: 0.8, 2: 0.9},
-            (0, 2): {0: 0.25, 1: 0.9, 2: 1.0},
+            (0, 2): {0: 0.05, 1: 0.3, 2: 0.4},
             (1, 2): {1: 0.1, 2: 0.15},
             (2, 2): {2: 0.5},
         })
@@ -317,11 +317,14 @@ class OnlinePaperContracts(unittest.TestCase):
         initial_candidates = {tuple(item) for item in data.plan.metadata["bayes_initial_candidates"]}
         self.assertEqual(initial_candidates, {(1, 2)})
         self.assertEqual(data.decisions[0].action, DecisionAction.RETRAIN)
+        self.assertEqual(data.decisions[1].action, DecisionAction.RETRAIN)
         self.assertNotIn((0, 2), initial_candidates)
         self.assertEqual(model.fit_calls.count((0, 2)), 1)
-        # The materialized step-0 model has baseline.25 and next loss.9.
+        # This new candidate remains useful after measured-plan optimization.
+        # Its measured baseline is .05 and its next loss is .3.
         # Teacher features must use these measurements, not the surrogate.
-        self.assertFeatures(data.states[1], (0.65, 0.65, 1))
+        self.assertFeatures(data.states[1], (0.25, 0.25, 1))
+        self.assertAlmostEqual(data.plan.total_cost, 0.3)
         self.assertTrue(all(step <= 2 for _, step in model.eval_calls))
 
     def test_explicit_constant_initial_loss_does_not_train_or_evaluate_a_model(self):

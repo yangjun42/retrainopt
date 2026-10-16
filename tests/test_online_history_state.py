@@ -214,8 +214,13 @@ class OnlineHistoryStateContracts(unittest.TestCase):
                 initial_reference_loss=0.5,
             )
         self.assertEqual(history.plan.metadata["bayes_initial_candidates"], [(1, 2)])
-        self.assertEqual(history.plan.estimated_total_cost, 0.0)
-        self.assertEqual(history.decisions, (Decision(DecisionAction.RETRAIN, 2, 0), KEEP, KEEP))
+        # The zero-cost optimistic proposal causes step 0 to be measured even
+        # though the surrogate predicted a fit cost of 99. Its measured loss is
+        # poor, so final optimization retains the initial model until step 1.
+        self.assertEqual(history.plan.metadata["finalization_new_candidates"], [(0, 2)])
+        self.assertEqual(history.plan.estimated_total_cost, 1.125)
+        self.assertEqual(history.plan.total_cost, 1.125)
+        self.assertEqual(history.decisions, (KEEP, Decision(DecisionAction.RETRAIN, 2, 1), KEEP))
         self.assertEqual(model.fit_calls, [(1, 2), (0, 2)])
         self.assertEqual(history.plan.training_cost, 0.0)
 

@@ -39,12 +39,22 @@ fixed seeds alone do not make it deterministic.
 | `PlanResult.loss_cost` | Sum of selected models' raw losses over the timeline. |
 | `PlanResult.weighted_loss_cost` | `loss_cost_weight * loss_cost`. |
 | `PlanResult.total_cost` | `training_cost + weighted_loss_cost`. |
+| `PlanResult.estimated_total_cost` | For Bayes, the returned schedule's cost using the table from before final measurement. |
 
 The plan's training cost is not the expense of finding the plan. Exact search
 trains all candidates; approximate search trains a subset and may perform
 extra fits when measuring the final schedule or collecting diagnostic history.
 `record_bayes_true_history=True` can add substantial diagnostic work. There is
 no guarantee that a small candidate-selection setting caps total fit time.
+
+After measuring the estimated proposal, Bayes reoptimizes over all measured
+candidates. The returned plan can therefore differ from that proposal, and
+every selected candidate has measured costs. This final optimization performs
+no fits. `surrogate_evaluated_candidates` counts candidates observed before
+final measurement; `evaluated_candidates` includes final measurement, while
+`finalization_new_candidates` lists its additions. These counts exclude extra
+diagnostic fits. Diagnostic history is collected after selection and cannot
+change the returned plan or add candidates to the search cache.
 
 (custom-training-costs)=
 ## Custom training costs
@@ -149,8 +159,9 @@ experiment.
 This in-memory cache is not a persistent cross-experiment result store.
 
 Serialized results use `schema_version=2`; metadata uses
-`metadata_schema_version=1` and `algorithm_version="0.2"`. The algorithm version
-identifies cost and acquisition semantics independently of the package version.
+`metadata_schema_version=1` and `algorithm_version="0.3"`. The algorithm version
+identifies planning semantics independently of the package version; `0.3` adds
+the final optimization over measured candidates.
 Approximate runs record
 `acquisition_semantics="complete_stage_independent_posteriors"`.
 
