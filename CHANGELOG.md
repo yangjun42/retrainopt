@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.4.2rc1 — 2026-10-16
+## 0.4.2 — 2026-10-16
 
 - Support a declared class space in the sklearn adapter so probability outputs
   from candidates missing a class can be scored consistently. Reject unknown
