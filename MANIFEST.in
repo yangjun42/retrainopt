@@ -1,5 +1,5 @@
 include CHANGELOG.md CITATION.cff uv.lock
-recursive-include docs *.md *.py *.html *.css *.js *.json
+recursive-include docs *.md *.py *.html *.css *.js *.json *.png
 recursive-include scripts *.py
 recursive-include examples *.py
 recursive-include tests *.py
