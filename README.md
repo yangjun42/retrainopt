@@ -9,9 +9,7 @@ data, or make retraining decisions as new data arrives.
 [Try the interactive demo](https://yangjun42.github.io/retrainopt/_static/demo/index.html)
 to see how changing training costs and data drift changes a retraining schedule.
 
-[![Demo preview: cost comparison and an optimized schedule with two retraining steps using 100% and 75% of available data.](https://raw.githubusercontent.com/yangjun42/retrainopt/main/docs/_static/demo/preview-wide.png)](https://yangjun42.github.io/retrainopt/_static/demo/index.html)
-
-*A synthetic timeline: compare training costs and choose when and how much to retrain.*
+[![Demo preview on a synthetic timeline: cost comparison and an optimized schedule with two retraining steps using 100% and 75% of available data.](https://raw.githubusercontent.com/yangjun42/retrainopt/main/docs/_static/demo/preview.jpg)](https://yangjun42.github.io/retrainopt/_static/demo/index.html)
 
 Based on [*Automated Retraining for Cost-Optimal ML*](https://link.springer.com/chapter/10.1007/978-3-032-37654-1_14)
 by Jun Yang and Michael Mathioudakis (ECML PKDD 2026).
