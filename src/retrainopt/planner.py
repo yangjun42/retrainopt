@@ -55,8 +55,12 @@ class RetrainingPlanner:
         Supported methods:
 
         - ``exact``: exact dynamic programming over all configured candidates.
-        - ``bayes``: surrogate-guided candidate evaluation followed by exact DP
-          on an estimated full cost matrix.
+        - ``bayes``: surrogate-guided candidate evaluation, measurement of the
+          estimated schedule, and final DP over all measured candidates.
+
+        Bayes returns a fully measured schedule. Its ``estimated_total_cost``
+        evaluates that same schedule using estimates from before final
+        measurement; it does not certify optimality over unmeasured candidates.
         """
         if not isinstance(method, str):
             raise ValueError("method must be 'exact' or 'bayes'.")
@@ -193,20 +197,35 @@ class RetrainingPlanner:
             surrogate,
         )
 
-        estimated_total, decisions, _, _ = solve_exact_schedule(
+        _, estimated_decisions, _, _ = solve_exact_schedule(
             self.timeline.num_steps,
             estimated_state_costs,
             loss_cost_weight=self.config.loss_cost_weight,
         )
         realized_state_costs = {(-1, 0): initial_eval.to_state_cost()}
-        for step, decision in enumerate(decisions):
-            if decision.action != DecisionAction.RETRAIN:
-                continue
-            model_id = (step, int(decision.n_samples or 0))
+        realized_state_costs.update({evaluation.model_id: evaluation.to_state_cost() for evaluation in observed})
+        finalization_new_candidates = self._new_retrain_candidates_from_sequence(
+            estimated_decisions, {evaluation.model_id for evaluation in observed},
+        )
+        for model_id in finalization_new_candidates:
             realized_state_costs[model_id] = self._evaluate_candidate(*model_id).to_state_cost()
+
+        # Reconsider the plan using every measured candidate. This also retains
+        # any better schedule already supported by the search's observations,
+        # without starting another round of surrogate-guided fits.
+        _, decisions, _, _ = solve_exact_schedule(
+            self.timeline.num_steps,
+            realized_state_costs,
+            loss_cost_weight=self.config.loss_cost_weight,
+        )
         total_cost, training_cost, loss_cost = evaluate_decision_sequence(
             decisions,
             realized_state_costs,
+            loss_cost_weight=self.config.loss_cost_weight,
+        )
+        estimated_total, _, _ = evaluate_decision_sequence(
+            decisions,
+            estimated_state_costs,
             loss_cost_weight=self.config.loss_cost_weight,
         )
         total_evaluated_candidates = len(self._observed_candidates())
@@ -239,6 +258,8 @@ class RetrainingPlanner:
                 "bayes_backend": self.config.bayes_backend,
                 "bayes_selection_strategy": bayes_selection_strategy,
                 "selected_sequence_evaluated_exactly": True,
+                "finalization_strategy": "observed_candidates_dp",
+                "finalization_new_candidates": finalization_new_candidates,
                 "bayes_iterations_completed": bayes_iterations_completed,
                 "bayes_stopped_early": bayes_stopped_early,
                 "bayes_initial_candidates": list(selected),
@@ -320,6 +341,7 @@ class RetrainingPlanner:
                 "bayes_backend": self.config.bayes_backend,
                 "bayes_selection_strategy": self._normalized_bayes_selection_strategy(),
                 "selected_sequence_evaluated_exactly": True,
+                "finalization_strategy": "observed_candidates_dp", "finalization_new_candidates": [],
                 "bayes_iterations_completed": 0, "bayes_stopped_early": True,
                 "bayes_initial_candidates": [], "bayes_new_candidates_by_iteration": [],
                 "bayes_retrain_steps_by_iteration": [], "bayes_estimated_decisions_history": [],

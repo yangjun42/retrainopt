@@ -11,7 +11,7 @@ from typing import Any, Dict, List, Optional, Tuple
 ModelId = Tuple[int, int]
 RESULT_SCHEMA_VERSION = 2
 METADATA_SCHEMA_VERSION = 1
-ALGORITHM_VERSION = "0.2"
+ALGORITHM_VERSION = "0.3"
 
 
 class DecisionAction(str, Enum):

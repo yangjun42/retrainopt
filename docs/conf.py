@@ -15,6 +15,7 @@ extensions = [
 ]
 myst_enable_extensions = ["dollarmath"]
 html_theme = "furo"
+html_static_path = ["_static"]
 exclude_patterns = ["_build"]
 autodoc_member_order = "bysource"
 nitpicky = False

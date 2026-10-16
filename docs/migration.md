@@ -1,5 +1,21 @@
 # Migration guide
 
+## From 0.4.0 to 0.4.1
+
+The public APIs are unchanged. After measuring the approximate planner's final
+proposal, `bayes` now reoptimizes over all measured candidates. It can return a
+different, cheaper schedule without additional candidate fits. `total_cost`
+is the returned schedule's measured cost; `estimated_total_cost` evaluates that
+same schedule using the estimates from before final measurement. The two values
+can differ. Algorithm metadata advances to `algorithm_version="0.3"`.
+
+Torch evaluation now restores every module's original training/evaluation mode,
+including when evaluation raises an exception. Code that relied on evaluation
+leaving a model in evaluation mode should call `model.eval()` explicitly.
+
+See [Online retraining](online.md) for restoring a controller after a completed
+step, including a controller that started from a synthetic loss baseline.
+
 ## From 0.3.1 to 0.4.0
 
 The default evaluator retains its wall-clock training costs and zero initial

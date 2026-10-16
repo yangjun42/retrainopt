@@ -31,15 +31,21 @@ finite-horizon recurrence does not require positive scores.
 ## Approximate search
 
 `bayes` measures an initial candidate set, fits training-cost and evaluation-loss
-surrogates, and uses acquisition-guided candidate selection. It finally runs
-DP on the measured/estimated cost table and measures the selected schedule's
-remaining candidates. `total_cost` is that schedule's measured cost;
-`estimated_total_cost` is the pre-measurement surrogate estimate. Neither
-certifies that approximate search found the global optimum.
+surrogates, and uses acquisition-guided candidate selection. It then runs DP
+on the measured/estimated cost table and measures that proposed schedule's
+remaining candidates. A final DP over **all measured candidates** chooses the
+returned schedule. This can replace an overly optimistic proposal with a
+better measured alternative, including combinations of earlier candidates.
+The result is optimal over the measured subset, which includes the fully
+measured proposal; unmeasured candidates may still offer a better schedule.
 
-Every DP solve still considers the full configured candidate grid. Approximate
-search reduces measured model fits; it does not reduce the DP grid or its
-state-space complexity.
+`total_cost` is the returned schedule's measured cost. `estimated_total_cost`
+evaluates that same returned schedule using the cost table from before final
+measurement; it is not the estimate of a discarded proposal.
+
+Search DP solves still consider the full configured candidate grid; only the
+final measured-candidate solve uses a subset. Approximate search reduces model
+fits but retains the full grid's DP state-space complexity during search.
 
 The default `lightweight` backend is a nearest-neighbor heuristic. Its
 uncertainty scores are not calibrated GP posterior uncertainties. The optional
@@ -58,8 +64,11 @@ Anchors can therefore exceed that initial target. Candidate ranking supplies
 new candidates when the selected sequence has none, and supplements iterations
 that propose too few. These are library extensions to the paper's sequence
 search. `bayes_candidates_per_iteration` is a minimum target, not a hard
-evaluation budget. Sequence selection can propose more, and measuring the final
-selected schedule can require additional candidates.
+evaluation budget. Sequence selection can propose more. Final measurement adds
+at most one previously unmeasured candidate per timestep, and the final DP
+performs no fits or further surrogate-guided search. Metadata records these
+additional candidates in `finalization_new_candidates`, with
+`finalization_strategy="observed_candidates_dp"`.
 
 For GP surrogates with random initialization and sequence selection, use
 `bayes_backend="botorch"`, `bayes_anchor_steps=()`, and

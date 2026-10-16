@@ -52,6 +52,8 @@ def main() -> None:
         json.dumps(result.to_dict(), allow_nan=False)
         if method == "bayes":
             assert result.metadata["bayes_iterations_completed"] == 1
+            assert result.metadata["finalization_strategy"] == "observed_candidates_dp"
+            assert result.metadata["algorithm_version"] == "0.3"
         costs[method] = result.total_cost
     assert costs["exact"] == costs["bayes"]
     def fixed_training_cost(*, step, n_samples, training_seconds, model):

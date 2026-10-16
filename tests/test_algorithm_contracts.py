@@ -269,7 +269,7 @@ class PlannerBoundaryContracts(unittest.TestCase):
         self.assertEqual(result.total_cost, result.training_cost + result.weighted_loss_cost)
         self.assertEqual(result.to_dict()["schema_version"], 2)
         self.assertEqual(result.metadata["metadata_schema_version"], 1)
-        self.assertEqual(result.metadata["algorithm_version"], "0.2")
+        self.assertEqual(result.metadata["algorithm_version"], "0.3")
         self.assertEqual(result.metadata["initial_model_source"], "provider_supplied")
 
     def test_zero_candidates_are_keep_only_for_both_methods(self):

@@ -76,6 +76,54 @@ baseline is useful for controlled examples; it is not a fitted model. It also
 accepts explicit initial age and accumulated staleness. An explicit model and
 `initial_loss` are mutually exclusive.
 
+## Resume a controller
+
+After a successful step, save the current model, reference loss, last retraining
+step, next step and accumulated staleness together. Also preserve the fitted
+policy, configuration, training-cost function and the settings needed to
+reconstruct the model adapter and timeline. Model and policy serialization,
+and writing a consistent checkpoint, are the application's responsibility;
+`OnlineStepResult.to_dict()` alone is not a checkpoint.
+
+The following reconstructs a controller in the same process. After a restart,
+use the corresponding loaded objects and saved values:
+
+```python
+from dataclasses import replace
+from retrainopt import OnlineController
+
+model = controller.current_model
+resume_config = controller.config
+if model is not None:
+    resume_config = replace(resume_config, initial_loss=None)
+
+saved_state = {
+    "initial_model": model,
+    "initial_reference_loss": controller.reference_loss if model is not None else None,
+    "start_step": controller.next_step,
+    "initial_trained_at": controller.last_retrain_step,
+    "initial_accumulated_staleness": controller.accumulated_staleness,
+}
+restored = OnlineController(
+    controller.timeline,
+    controller.model_adapter,
+    controller.policy,
+    resume_config,
+    training_cost_fn=controller.training_cost_fn,
+    **saved_state,
+)
+```
+
+Keep the original timeline coordinates: saved step `7` must still identify the
+same data block after restoration. This preserves model age and sampling seeds.
+Use the saved reference loss and signed accumulated staleness without measuring
+a new reference or adding the last completed observation again.
+
+If the controller started with a synthetic `initial_loss`, its configuration
+still contains that value after the first retraining. Clear it in the restored
+configuration when supplying the trained model, as above. Before the first
+retraining, retain `initial_loss` and pass neither a model nor a reference loss.
+
 ## Base policy
 
 `BaseOnlinePolicy.from_plan(plan)` computes the mean retraining sample count

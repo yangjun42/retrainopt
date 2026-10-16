@@ -15,10 +15,15 @@ choose that plan.
 The Base and Learned online policies support sequential retraining decisions
 from observed history.
 
+<p><a href="_static/demo/index.html"><strong>Try the interactive scheduling example →</strong></a></p>
+Change the cost of training and prediction errors to explore when and how much
+to retrain in a synthetic timeline.
+
 ```{toctree}
 :maxdepth: 2
 
 quickstart
+demo
 algorithms
 online
 evaluation
