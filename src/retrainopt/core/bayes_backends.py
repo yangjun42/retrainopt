@@ -272,6 +272,11 @@ class BoTorchBayesBackend(BaseBayesBackend):
 
 def create_bayes_backend(name: str, *, config: PlannerConfig) -> BaseBayesBackend:
     """Instantiate a bayes surrogate backend by name."""
+    if config.bayes_backend_options:
+        raise ValueError(
+            "bayes_backend_options does not support any options yet; "
+            "leave it empty and use the explicit PlannerConfig fields."
+        )
     normalized = (name or "lightweight").strip().lower()
     registry: Dict[str, BaseBayesBackend] = {
         "lightweight": LightweightBayesBackend(),

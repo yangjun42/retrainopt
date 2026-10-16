@@ -27,6 +27,52 @@ scalars or nonempty flat lists/tuples; every sample must have the same dimension
 including evaluation samples. The sklearn estimator and PyTorch model retain
 their own feature and target requirements.
 
+### scikit-learn class coverage
+
+For probability classifiers, declare the task's class space when a training
+sample may omit classes or later evaluation blocks may contain additional
+classes:
+
+```python
+from sklearn.ensemble import RandomForestClassifier
+from retrainopt.adapters import SklearnModelAdapter
+
+adapter = SklearnModelAdapter(RandomForestClassifier(), classes=(0, 1, 2))
+```
+
+`classes` must contain at least two distinct integer class labels. The adapter
+copies and sorts them, aligns `predict_proba` columns with that class space,
+and assigns zero probability to classes absent from the fitted model.
+Log loss clips zero probabilities to the prediction dtype's machine precision,
+so a missing class incurs a large finite loss. Supply classes from the task's
+known label schema before planning; the adapter never discovers them by
+reading future evaluation blocks. Training, model and evaluation labels
+outside the declared space raise an error.
+
+Without `classes`, log loss uses the fitted model's classes, requires at least
+two of them, and rejects evaluation labels the model has not learned. These
+checks apply consistently across supported scikit-learn versions. Classifiers
+without `predict_proba` retain their classification error-rate loss.
+
+The default timeline sampler is uniform, without class stratification. Small
+candidates can therefore contain a single class. A random forest can fit such
+a candidate and be scored using declared classes; an estimator such as logistic
+regression still requires multiple training classes. Declaring `classes` does
+not change its fitting requirements or add training samples. A failed fit
+stops planning and retains the original error, with timestep and sample-count
+context for single-class candidates. Choose feasible candidate sizes or supply
+a `TimelineDataset.sample_train_block()` implementation with the sampling
+policy your task needs; the adapter does not retry or silently resample.
+
+### PyTorch devices
+
+`device="cuda"` resolves to the current CUDA device at the start of each adapter
+call. Training uses that same device for model and batch placement, RNG seeding
+and restoration, and synchronization. Use an explicit device such as
+`device="cuda:1"` when calls must stay on a particular GPU even if the process's
+current device changes. An externally supplied model must already be on the
+adapter's device when evaluated.
+
 The optional examples use synthetic, in-memory data and run on CPU:
 
 ```shell

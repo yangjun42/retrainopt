@@ -57,6 +57,10 @@ mean with zero standard deviation instead of fitting a GP. The planner clips
 negative predicted cost and loss means to zero without changing their standard
 deviations.
 
+Use the explicit `PlannerConfig` fields to configure these backends.
+`bayes_backend_options` currently accepts only an empty dictionary; unsupported
+options raise an error.
+
 The default `sequence` selection follows an acquisition-minimizing DP schedule.
 Initialization measures every configured sample count at each anchor step,
 then samples random candidates if needed to reach `bayes_initial_samples`.
